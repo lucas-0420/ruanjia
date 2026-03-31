@@ -1,0 +1,5 @@
+{
+  "name": "租家 AI 地產",
+  "description": "現代化 AI 驅動的租屋平台，提供地圖搜尋與屋主直租服務。",
+  "requestFramePermissions": ["geolocation"]
+}
