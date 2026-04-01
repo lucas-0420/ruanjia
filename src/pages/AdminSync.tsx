@@ -1,7 +1,28 @@
-import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
+import React, { useState, useEffect, useCallback } from 'react';
+
+function ExpandableText({ text }: { text: string }) {
+  const limit = 150;
+  const isLong = text.length > limit;
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="bg-gray-50 p-4 rounded-2xl mb-4">
+      <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+        {isLong && !expanded ? text.substring(0, limit) + '...' : text}
+      </p>
+      {isLong && (
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="mt-2 text-xs font-medium text-orange-500 hover:text-orange-700"
+        >
+          {expanded ? '收起' : '顯示更多'}
+        </button>
+      )}
+    </div>
+  );
+}
+import { motion, AnimatePresence } from 'motion/react';
 import { useFirebase } from '../context/SupabaseContext';
-import { MessageSquare, Image as ImageIcon, CheckCircle, Clock, Trash2, ExternalLink, RefreshCw, ChevronRight, Terminal, AlertCircle } from 'lucide-react';
+import { MessageSquare, Image as ImageIcon, CheckCircle, Clock, Trash2, ExternalLink, RefreshCw, ChevronRight, ChevronLeft, Terminal, AlertCircle, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase';
 
@@ -11,6 +32,24 @@ export default function AdminSync() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [isLogsLoading, setIsLogsLoading] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [lightbox, setLightbox] = useState<{ urls: string[]; index: number } | null>(null);
+
+  const openLightbox = (urls: string[], index: number) => setLightbox({ urls, index });
+  const closeLightbox = () => setLightbox(null);
+  const prevImage = useCallback(() => setLightbox(l => l && l.index > 0 ? { ...l, index: l.index - 1 } : l), []);
+  const nextImage = useCallback(() => setLightbox(l => l && l.index < l.urls.length - 1 ? { ...l, index: l.index + 1 } : l), []);
+
+  useEffect(() => {
+    if (!lightbox) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') prevImage();
+      if (e.key === 'ArrowRight') nextImage();
+      if (e.key === 'Escape') closeLightbox();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [lightbox, prevImage, nextImage]);
 
   const fetchLogs = async () => {
     setIsLogsLoading(true);
@@ -52,10 +91,73 @@ export default function AdminSync() {
     }
   };
 
+  const toggleSelect = (id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selected.size === groupedMessages.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(groupedMessages.map(g => g.msg.id)));
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selected.size === 0) return;
+    if (!window.confirm(`確定要刪除選取的 ${selected.size} 筆訊息嗎？`)) return;
+    for (const id of selected) {
+      await supabase.from('line_messages').delete().eq('id', id);
+    }
+    setSelected(new Set());
+  };
+
   const handleQuickPost = (msg: any) => {
-    // Navigate to post page with state
     navigate('/post', { state: { prefill: msg.parsedData } });
   };
+
+  // 把文字訊息和同用戶 30 分鐘內的圖片合成一組
+  const groupedMessages = (() => {
+    const sorted = [...lineMessages].sort((a, b) =>
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
+    const groups: Array<{ msg: any; images: string[] }> = [];
+    // 每個 userId 對應目前最新的 group index
+    const userLatestGroup: Record<string, number> = {};
+
+    for (const msg of sorted) {
+      const isMedia = msg.images && msg.images.length > 0 &&
+        (msg.text === '[圖片訊息]' || msg.text === '[圖片訊息 - 無法下載]' ||
+         msg.text === '[影片訊息]' || msg.text === '[影片訊息 - 無法下載]');
+
+      if (!isMedia) {
+        // 文字訊息 → 建立新 group
+        const idx = groups.length;
+        groups.push({ msg, images: [] });
+        userLatestGroup[msg.userId] = idx;
+      } else {
+        // 圖片／影片 → 加入該用戶最新的 group（若 30 分鐘內）
+        const latestIdx = userLatestGroup[msg.userId];
+        if (latestIdx !== undefined) {
+          const groupTime = new Date(groups[latestIdx].msg.timestamp).getTime();
+          const mediaTime = new Date(msg.timestamp).getTime();
+          if (mediaTime - groupTime <= 30 * 60 * 1000) {
+            groups[latestIdx].images.push(...(msg.images || []).filter(Boolean));
+            continue;
+          }
+        }
+        // 沒有對應的文字訊息 → 獨立顯示
+        groups.push({ msg, images: (msg.images || []).filter(Boolean) });
+      }
+    }
+
+    return groups.reverse();
+  })();
 
   const formatDate = (timestamp: any) => {
     if (!timestamp) return '';
@@ -78,11 +180,23 @@ export default function AdminSync() {
           </div>
           
           <div className="flex items-center gap-3">
-            <button 
-              onClick={() => {
-                setIsRefreshing(true);
-                setTimeout(() => setIsRefreshing(false), 1000);
-              }}
+            {selected.size > 0 && (
+              <button
+                onClick={handleDeleteSelected}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 transition-all shadow-sm"
+              >
+                <Trash2 className="w-4 h-4" />
+                刪除 {selected.size} 筆
+              </button>
+            )}
+            <button
+              onClick={toggleSelectAll}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:border-orange-600 hover:text-orange-600 transition-all shadow-sm"
+            >
+              {selected.size === groupedMessages.length && groupedMessages.length > 0 ? '取消全選' : '全選'}
+            </button>
+            <button
+              onClick={() => { setIsRefreshing(true); setTimeout(() => setIsRefreshing(false), 1000); }}
               className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:border-orange-600 hover:text-orange-600 transition-all shadow-sm"
             >
               <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -165,7 +279,7 @@ export default function AdminSync() {
 
           {/* Messages List */}
           <div className="lg:col-span-2 space-y-4">
-            {lineMessages.length === 0 ? (
+            {groupedMessages.length === 0 ? (
               <div className="bg-white py-20 rounded-3xl border border-dashed border-gray-200 flex flex-col items-center justify-center text-center px-6">
                 <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center text-gray-300 mb-4">
                   <MessageSquare className="w-8 h-8" />
@@ -176,36 +290,46 @@ export default function AdminSync() {
                 </p>
               </div>
             ) : (
-              lineMessages.map((msg, idx) => (
+              groupedMessages.map(({ msg, images }, idx) => (
                 <motion.div
                   key={msg.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: idx * 0.05 }}
-                  className={`bg-white p-6 rounded-3xl shadow-sm border transition-all ${
+                  className={`bg-white p-6 rounded-3xl shadow-sm border transition-all max-h-[400px] overflow-y-auto ${
+                    selected.has(msg.id) ? 'border-orange-400 bg-orange-50/30' :
                     msg.status === 'processed' ? 'border-gray-100 opacity-60' : 'border-gray-200 hover:border-orange-200'
                   }`}
                 >
+                  {/* Header */}
                   <div className="flex items-start justify-between gap-4 mb-4">
                     <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                        msg.type === 'image' ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600'
-                      }`}>
-                        {msg.type === 'image' ? <ImageIcon className="w-5 h-5" /> : <MessageSquare className="w-5 h-5" />}
+                      <input
+                        type="checkbox"
+                        checked={selected.has(msg.id)}
+                        onChange={() => toggleSelect(msg.id)}
+                        className="w-4 h-4 rounded accent-orange-500 cursor-pointer"
+                      />
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-orange-50 text-orange-600">
+                        <MessageSquare className="w-5 h-5" />
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-gray-900">{msg.source === 'group' ? '群組訊息' : '直接訊息'}</span>
+                          {images.length > 0 && (
+                            <span className="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">
+                              <ImageIcon className="w-3 h-3" />{images.length} 張照片
+                            </span>
+                          )}
                           <span className="text-xs text-gray-400">•</span>
                           <span className="text-xs text-gray-400">{formatDate(msg.timestamp)}</span>
                         </div>
                         <span className="text-xs text-gray-500 font-mono">UID: {msg.userId.substring(0, 8)}...</span>
                       </div>
                     </div>
-
                     <div className="flex items-center gap-2">
                       {msg.status === 'pending' && (
-                        <button 
+                        <button
                           onClick={() => handleStatusChange(msg.id, 'processed')}
                           className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all"
                           title="標記為已處理"
@@ -213,7 +337,7 @@ export default function AdminSync() {
                           <CheckCircle className="w-5 h-5" />
                         </button>
                       )}
-                      <button 
+                      <button
                         onClick={() => handleDelete(msg.id)}
                         className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
                         title="刪除"
@@ -223,26 +347,44 @@ export default function AdminSync() {
                     </div>
                   </div>
 
-                  <div className="bg-gray-50 p-4 rounded-2xl mb-4">
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                      {msg.text}
-                    </p>
-                  </div>
+                  {/* 文字內容 */}
+                  {msg.text && msg.text !== '[圖片訊息]' && msg.text !== '[圖片訊息 - 無法下載]' && (
+                    <ExpandableText text={msg.text} />
+                  )}
 
-                  {msg.parsedData && Object.keys(msg.parsedData).length > 0 && (
+                  {/* 圖片／影片 */}
+                  {images.length > 0 && (
+                    <div className="grid grid-cols-4 gap-2 mb-4">
+                      {images.map((url, i) => (
+                        url.includes('/line-videos/') ? (
+                          <button key={i} onClick={() => openLightbox(images, i)} className="col-span-2 relative focus:outline-none group">
+                            <video src={url} className="w-full h-20 object-cover rounded-xl border border-gray-100" muted />
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-xl group-hover:bg-black/40 transition">
+                              <div className="w-8 h-8 bg-white/80 rounded-full flex items-center justify-center">▶</div>
+                            </div>
+                          </button>
+                        ) : (
+                          <button key={i} onClick={() => openLightbox(images, i)} className="focus:outline-none">
+                            <img src={url} alt="" className="w-full h-20 object-cover rounded-xl border border-gray-100 hover:opacity-80 transition-opacity" />
+                          </button>
+                        )
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 解析資訊 */}
+                  {msg.parsedData && Object.keys(msg.parsedData).filter(k => k !== 'property_id').length > 0 && (
                     <div className="border-t border-gray-100 pt-4 mt-4">
                       <div className="flex items-center justify-between mb-4">
-                        <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">AI 提取資訊</span>
-                        <button 
+                        <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">提取資訊</span>
+                        <button
                           onClick={() => handleQuickPost(msg)}
                           className="inline-flex items-center gap-2 text-sm font-bold text-orange-600 hover:text-orange-700"
                         >
-                          快速上架
-                          <ChevronRight className="w-4 h-4" />
+                          快速上架 <ChevronRight className="w-4 h-4" />
                         </button>
                       </div>
-                      
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                         {msg.parsedData.title && (
                           <div className="bg-white p-3 rounded-xl border border-gray-100">
                             <span className="block text-[10px] text-gray-400 uppercase mb-1">標題</span>
@@ -252,7 +394,7 @@ export default function AdminSync() {
                         {msg.parsedData.price && (
                           <div className="bg-white p-3 rounded-xl border border-gray-100">
                             <span className="block text-[10px] text-gray-400 uppercase mb-1">價格</span>
-                            <span className="text-sm font-bold text-orange-600">${msg.parsedData.price.toLocaleString()}</span>
+                            <span className="text-sm font-bold text-orange-600">${(msg.parsedData.price as number).toLocaleString()}</span>
                           </div>
                         )}
                         {msg.parsedData.city && (
@@ -276,6 +418,51 @@ export default function AdminSync() {
           </div>
         </div>
       </div>
+
+      {/* Lightbox */}
+      {lightbox && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center" onClick={closeLightbox}>
+          <button onClick={closeLightbox} className="absolute top-4 right-4 text-white hover:text-gray-300">
+            <X className="w-8 h-8" />
+          </button>
+
+          <button
+            onClick={e => { e.stopPropagation(); prevImage(); }}
+            className={`absolute left-4 text-white hover:text-gray-300 ${lightbox.index === 0 ? 'opacity-30 pointer-events-none' : ''}`}
+          >
+            <ChevronLeft className="w-10 h-10" />
+          </button>
+
+          {lightbox.urls[lightbox.index].includes('/line-videos/') ? (
+            <video
+              key={lightbox.index}
+              src={lightbox.urls[lightbox.index]}
+              controls
+              autoPlay
+              className="max-h-[90vh] max-w-[90vw] rounded-xl"
+              onClick={e => e.stopPropagation()}
+            />
+          ) : (
+            <img
+              src={lightbox.urls[lightbox.index]}
+              alt=""
+              className="max-h-[90vh] max-w-[90vw] object-contain rounded-xl"
+              onClick={e => e.stopPropagation()}
+            />
+          )}
+
+          <button
+            onClick={e => { e.stopPropagation(); nextImage(); }}
+            className={`absolute right-4 text-white hover:text-gray-300 ${lightbox.index === lightbox.urls.length - 1 ? 'opacity-30 pointer-events-none' : ''}`}
+          >
+            <ChevronRight className="w-10 h-10" />
+          </button>
+
+          <div className="absolute bottom-4 text-white text-sm">
+            {lightbox.index + 1} / {lightbox.urls.length}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

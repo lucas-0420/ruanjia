@@ -63,42 +63,120 @@ app.set('strict routing', false);
 app.set('case sensitive routing', false);
 
 // Helper to parse property info from text using Gemini
-async function parsePropertyFromText(text: string) {
-  if (!process.env.GEMINI_API_KEY) return null;
-  
-  try {
-    const truncatedText = text.substring(0, 2000);
-    const prompt = `
-      Extract property information from the following text and return it as a JSON object.
-      Fields to extract: title, price (number), type (apartment/house/studio/room), city, district, address, bedrooms (number), bathrooms (number), area (number), description.
-      Text: "${truncatedText}"
-      JSON Format:
-      {
-        "title": "...",
-        "price": 0,
-        "type": "...",
-        "city": "...",
-        "district": "...",
-        "address": "...",
-        "bedrooms": 0,
-        "bathrooms": 0,
-        "area": 0,
-        "description": "..."
+function parsePropertyFromText(text: string) {
+  const result: any = {};
+
+  // 區 → 城市對照表
+  const districtToCity: Record<string, string> = {
+    // 台北市
+    '信義區':'台北市','大安區':'台北市','中山區':'台北市','中正區':'台北市','松山區':'台北市',
+    '內湖區':'台北市','南港區':'台北市','士林區':'台北市','北投區':'台北市','文山區':'台北市',
+    '大同區':'台北市','萬華區':'台北市',
+    // 新北市
+    '板橋區':'新北市','三重區':'新北市','中和區':'新北市','永和區':'新北市','新莊區':'新北市',
+    '新店區':'新北市','樹林區':'新北市','鶯歌區':'新北市','三峽區':'新北市','淡水區':'新北市',
+    '汐止區':'新北市','瑞芳區':'新北市','土城區':'新北市','蘆洲區':'新北市','五股區':'新北市',
+    '泰山區':'新北市','林口區':'新北市','深坑區':'新北市','石碇區':'新北市','坪林區':'新北市',
+    // 台中市
+    '中區':'台中市','東區':'台中市','西區':'台中市','南區':'台中市','北區':'台中市',
+    '北屯區':'台中市','西屯區':'台中市','南屯區':'台中市','太平區':'台中市','大里區':'台中市',
+    '霧峰區':'台中市','烏日區':'台中市','豐原區':'台中市','后里區':'台中市','神岡區':'台中市',
+    '潭子區':'台中市','大雅區':'台中市','新社區':'台中市','石岡區':'台中市','東勢區':'台中市',
+    '和平區':'台中市','大甲區':'台中市','外埔區':'台中市','大安區_tc':'台中市','梧棲區':'台中市',
+    '清水區':'台中市','沙鹿區':'台中市','龍井區':'台中市','大肚區':'台中市',
+    // 高雄市
+    '鹽埕區':'高雄市','鼓山區':'高雄市','左營區':'高雄市','楠梓區':'高雄市','三民區':'高雄市',
+    '新興區':'高雄市','前金區':'高雄市','苓雅區':'高雄市','前鎮區':'高雄市','旗津區':'高雄市',
+    '小港區':'高雄市','鳳山區':'高雄市','林園區':'高雄市','大寮區':'高雄市','大樹區':'高雄市',
+    '大社區':'高雄市','仁武區':'高雄市','鳥松區':'高雄市','岡山區':'高雄市','橋頭區':'高雄市',
+    // 台南市
+    '中西區':'台南市','東區_tn':'台南市','南區_tn':'台南市','北區_tn':'台南市','安平區':'台南市',
+    '安南區':'台南市','永康區':'台南市','歸仁區':'台南市','新化區':'台南市','左鎮區':'台南市',
+    // 桃園市
+    '桃園區':'桃園市','中壢區':'桃園市','平鎮區':'桃園市','八德區':'桃園市','楊梅區':'桃園市',
+    '蘆竹區':'桃園市','大溪區':'桃園市','龜山區':'桃園市','大園區':'桃園市','觀音區':'桃園市',
+  };
+
+  // 價格：優先抓 "數字 / 租金" 或 "租金：數字"，避免抓到房號
+  const rentLineMatch = text.match(/房號[\/\s]*租金[^]*?(\d{4,6})/);
+  const simpleRentMatch = text.match(/租金[：:]\s*(\d{4,6})/u);
+  const slashPriceMatch = text.match(/[房號\d]+\s*\/\s*(\d{4,6})/);
+  const rawPriceMatch = text.match(/(\d{4,6})\s*[元\/月]/u);
+  const priceStr = (rentLineMatch?.[1] || simpleRentMatch?.[1] || slashPriceMatch?.[1] || rawPriceMatch?.[1] || '').replace(/,/g, '');
+  if (priceStr) result.price = parseInt(priceStr);
+
+  // 地址解析
+  const addrMatch = text.match(/(?:地址|地點|位置)[：:]\s*(.+)/);
+  if (addrMatch) {
+    const addr = addrMatch[1].trim();
+    const cityMatch = addr.match(/^(台北市|新北市|桃園市|台中市|台南市|高雄市|基隆市|新竹市|嘉義市|新竹縣|苗栗縣|彰化縣|南投縣|雲林縣|嘉義縣|屏東縣|宜蘭縣|花蓮縣|台東縣)/);
+    if (cityMatch) {
+      result.city = cityMatch[1];
+      const rest = addr.slice(result.city.length);
+      const dm = rest.match(/^(\S{2,4}[區鄉鎮市])/);
+      if (dm) { result.district = dm[1]; result.address = rest.slice(dm[1].length).trim(); }
+      else result.address = rest.trim();
+    } else {
+      // 地址沒有城市 → 從區名推算
+      const dm = addr.match(/^(\S{2,4}[區鄉鎮市])/);
+      if (dm) {
+        result.district = dm[1];
+        result.city = districtToCity[dm[1]] || '';
+        result.address = addr.slice(dm[1].length).trim();
+      } else {
+        result.address = addr;
       }
-    `;
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json"
-      }
-    });
-    const jsonStr = response.text.replace(/```json|```/g, '').trim();
-    return JSON.parse(jsonStr);
-  } catch (error) {
-    console.error("Gemini parsing error:", error);
-    return null;
+    }
   }
+
+  // 坪數
+  const areaMatch = text.match(/(\d+\.?\d*)\s*坪/);
+  if (areaMatch) result.area = parseFloat(areaMatch[1]);
+
+  // 格局/房型
+  const roomMatch = text.match(/([一二三四五六１２３４５６1-6])\s*房/);
+  const bathMatch = text.match(/([一二三四五六１２３４５６1-6])\s*衛/);
+  const toNum: Record<string, number> = { '一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'１':1,'２':2,'３':3,'４':4,'５':5,'６':6 };
+  if (roomMatch) result.bedrooms = toNum[roomMatch[1]] ?? parseInt(roomMatch[1]) ?? 1;
+  if (bathMatch) result.bathrooms = toNum[bathMatch[1]] ?? parseInt(bathMatch[1]) ?? 1;
+
+  // 總樓層
+  const totalFloorMatch = text.match(/總樓層[：:\s]*(\d+)/);
+  if (totalFloorMatch) result.totalFloors = parseInt(totalFloorMatch[1]);
+
+  // 樓層
+  const floorMatch = text.match(/樓層[：:\s]*(\d+)\s*樓/);
+  if (floorMatch) result.floor = parseInt(floorMatch[1]);
+
+  // 押金
+  const depositMatch = text.match(/簽約[：:]\s*(.+)/);
+  if (depositMatch) result.deposit = depositMatch[1].trim();
+
+  // 房型類型
+  if (/套房|獨立套|電梯套/.test(text)) result.type = 'studio';
+  else if (/雅房|分租/.test(text)) result.type = 'room';
+  else if (/透天|別墅/.test(text)) result.type = 'house';
+  else result.type = 'apartment';
+
+  // 標題：社區名稱 > 第一行 > 區+類型
+  const communityMatch = text.match(/社區名稱[：:]\s*(.+)/);
+  const firstLine = text.split('\n')[0].replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27FF}]/gu, '').trim().substring(0, 30);
+  if (communityMatch && result.district) {
+    result.title = `${result.district} ${communityMatch[1].trim()}`;
+  } else if (firstLine && firstLine.length > 5) {
+    result.title = firstLine;
+  } else if (result.district) {
+    const typeLabel = result.type === 'studio' ? '套房' : result.type === 'room' ? '雅房' : `${result.bedrooms || ''}房`;
+    result.title = `${result.city || ''}${result.district} ${typeLabel}`;
+  }
+
+  // 描述
+  result.description = text.substring(0, 500);
+
+  // 資料不足則回傳 null
+  if (!result.price || !result.city) return null;
+
+  return result;
 }
 
 // --- AI Chat API (安全：API Key 只在後端) ---
@@ -143,19 +221,15 @@ app.all(webhookPaths, (req, res, next) => {
   next();
 });
 
-const lineMiddleware = lineConfig.channelSecret
-  ? line.middleware(lineConfig)
-  : (_req: any, _res: any, next: any) => next();
-
-app.post(webhookPaths, (req, res, next) => {
-  // If it's a LINE verification request (often has a specific header or empty body)
-  if (req.headers['x-line-signature'] === undefined) {
-    addLog(`[WEBHOOK-POST-NO-SIG] ${req.url} - Returning 200 for potential verification`);
+app.post(webhookPaths, express.raw({ type: '*/*' }), async (req, res) => {
+  let body: any = {};
+  try {
+    const rawBody = req.body instanceof Buffer ? req.body.toString('utf8') : '{}';
+    body = JSON.parse(rawBody || '{}');
+  } catch {
     return res.status(200).send('OK');
   }
-  next();
-}, lineMiddleware, async (req, res) => {
-  const events = req.body.events || [];
+  const events = body.events || [];
   
   for (const event of events) {
     try {
@@ -166,37 +240,113 @@ app.post(webhookPaths, (req, res, next) => {
         if (message.type === 'text') {
           addLog(`Received LINE text message from ${userId}`);
           const parsedData = await parsePropertyFromText(message.text);
-          
+
+          // 取得 LINE 用戶名稱
+          let ownerName = 'LINE 房東';
+          let ownerAvatar = '';
+          try {
+            const profile = await lineClient.getProfile(userId);
+            ownerName = profile.displayName;
+            ownerAvatar = profile.pictureUrl || '';
+          } catch (e: any) {
+            addLog(`Cannot get LINE profile: ${e.message}`);
+          }
+
+          // 判斷是否有足夠資料自動上架
+          const canAutoList = parsedData && parsedData.title && parsedData.price && parsedData.city;
+          let propertyId: string | null = null;
+
+          if (canAutoList) {
+            const { data: newProperty, error: propErr } = await supabase.from('properties').insert({
+              title: parsedData.title,
+              price: parsedData.price,
+              type: parsedData.type || 'apartment',
+              city: parsedData.city,
+              district: parsedData.district || '',
+              address: parsedData.address || '',
+              bedrooms: parsedData.bedrooms || 1,
+              bathrooms: parsedData.bathrooms || 1,
+              area: parsedData.area || 0,
+              description: parsedData.description || '',
+              owner_name: ownerName,
+              owner_phone: '',
+              owner_avatar: ownerAvatar,
+              is_zero_fee: true,
+              status: 'active',
+              images: [],
+              tags: [],
+            }).select('id').single();
+
+            if (!propErr && newProperty) {
+              propertyId = newProperty.id;
+              addLog(`[AUTO-LIST] Property created: ${propertyId} (${parsedData.title})`);
+            } else {
+              addLog(`[AUTO-LIST] Failed to create property: ${propErr?.message}`);
+            }
+          }
+
           await supabase.from('line_messages').insert({
             line_message_id: message.id,
             text: message.text,
             user_id: userId,
-            status: 'pending',
+            status: propertyId ? 'processed' : 'pending',
             source: source.type === 'group' ? 'group' : 'direct',
-            parsed_data: parsedData || {},
+            parsed_data: { ...(parsedData || {}), property_id: propertyId },
           });
+
         } else if (message.type === 'image') {
           addLog(`Received LINE image from ${userId}`);
           let imageUrl = '';
           try {
-            // 下載圖片內容
-            const imageStream = await lineBlobClient.getMessageContent(message.id);
-            const chunks: Buffer[] = [];
-            for await (const chunk of imageStream) {
-              chunks.push(Buffer.from(chunk));
+            addLog(`[IMG] Fetching message ${message.id}`);
+            const imgResponse = await fetch(`https://api-data.line.me/v2/bot/message/${message.id}/content`, {
+              headers: { Authorization: `Bearer ${lineConfig.channelAccessToken}` },
+            });
+            addLog(`[IMG] LINE API status: ${imgResponse.status}`);
+            if (!imgResponse.ok) {
+              const errText = await imgResponse.text();
+              throw new Error(`LINE API ${imgResponse.status}: ${errText}`);
             }
-            const imageBuffer = Buffer.concat(chunks);
+            const arrayBuffer = await imgResponse.arrayBuffer();
+            addLog(`[IMG] Downloaded ${arrayBuffer.byteLength} bytes`);
+            const imageBuffer = Buffer.from(arrayBuffer);
 
-            // 存到 Supabase Storage
             const fileName = `line-images/${userId}_${message.id}.jpg`;
             const { error: storageErr } = await supabase.storage.from('property-images').upload(fileName, imageBuffer, { contentType: 'image/jpeg', upsert: true });
-            if (!storageErr) {
+            if (storageErr) {
+              addLog(`[STORAGE-ERROR] ${storageErr.message}`);
+            } else {
               const { data: urlData } = supabase.storage.from('property-images').getPublicUrl(fileName);
               imageUrl = urlData.publicUrl;
+              addLog(`[IMG] Saved to Storage: ${imageUrl}`);
             }
-            addLog(`Image saved to Storage: ${imageUrl}`);
           } catch (imgErr: any) {
-            addLog(`Image download error: ${imgErr.message}`);
+            addLog(`[IMG-ERROR] ${imgErr.message}`);
+          }
+
+          // 將圖片附加到此用戶最近 24 小時內的最新房源
+          if (imageUrl) {
+            const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+            const { data: recentMsg } = await supabase
+              .from('line_messages')
+              .select('parsed_data')
+              .eq('user_id', userId)
+              .eq('status', 'processed')
+              .gte('created_at', since)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .single();
+
+            const propertyId = recentMsg?.parsed_data?.property_id;
+            if (propertyId) {
+              const { data: prop } = await supabase.from('properties').select('images').eq('id', propertyId).single();
+              if (prop) {
+                await supabase.from('properties').update({
+                  images: [...(prop.images || []), imageUrl],
+                }).eq('id', propertyId);
+                addLog(`[AUTO-LIST] Image appended to property ${propertyId}`);
+              }
+            }
           }
 
           await supabase.from('line_messages').insert({
@@ -208,6 +358,54 @@ app.post(webhookPaths, (req, res, next) => {
             type: 'image',
             images: imageUrl ? [imageUrl] : [],
           });
+
+        } else if (message.type === 'video') {
+          addLog(`Received LINE video from ${userId}`);
+          let videoUrl = '';
+          try {
+            // 等待 LINE 影片轉碼完成（最多 30 秒）
+            let ready = false;
+            for (let i = 0; i < 6; i++) {
+              const statusRes = await fetch(`https://api-data.line.me/v2/bot/message/${message.id}/content/transcoding`, {
+                headers: { Authorization: `Bearer ${lineConfig.channelAccessToken}` },
+              });
+              const statusData = await statusRes.json() as any;
+              addLog(`[VIDEO] Transcoding status: ${statusData.status}`);
+              if (statusData.status === 'succeeded') { ready = true; break; }
+              if (statusData.status === 'failed') break;
+              await new Promise(r => setTimeout(r, 5000));
+            }
+            if (!ready) throw new Error('Transcoding not ready');
+
+            const vidResponse = await fetch(`https://api-data.line.me/v2/bot/message/${message.id}/content`, {
+              headers: { Authorization: `Bearer ${lineConfig.channelAccessToken}` },
+            });
+            if (!vidResponse.ok) throw new Error(`LINE API ${vidResponse.status}`);
+            const arrayBuffer = await vidResponse.arrayBuffer();
+            const videoBuffer = Buffer.from(arrayBuffer);
+
+            const fileName = `line-videos/${userId}_${message.id}.mp4`;
+            const { error: storageErr } = await supabase.storage.from('property-images').upload(fileName, videoBuffer, { contentType: 'video/mp4', upsert: true });
+            if (storageErr) {
+              addLog(`[VIDEO-STORAGE-ERROR] ${storageErr.message}`);
+            } else {
+              const { data: urlData } = supabase.storage.from('property-images').getPublicUrl(fileName);
+              videoUrl = urlData.publicUrl;
+              addLog(`[VIDEO] Saved: ${videoUrl}`);
+            }
+          } catch (vidErr: any) {
+            addLog(`[VIDEO-ERROR] ${vidErr.message}`);
+          }
+
+          await supabase.from('line_messages').insert({
+            line_message_id: message.id,
+            text: videoUrl ? '[影片訊息]' : '[影片訊息 - 無法下載]',
+            user_id: userId,
+            status: 'pending',
+            source: source.type === 'group' ? 'group' : 'direct',
+            type: 'video',
+            images: videoUrl ? [videoUrl] : [],
+          });
         }
       }
     } catch (e: any) {
@@ -216,12 +414,6 @@ app.post(webhookPaths, (req, res, next) => {
   }
   
   res.status(200).json({ status: 'ok' });
-}, (err: any, req: any, res: any, next: any) => {
-  if (err) {
-    addLog(`ERROR in LINE middleware: ${err.message}`);
-    return res.status(200).send('OK (Error Handled)'); // Still return 200 to satisfy LINE
-  }
-  next();
 });
 
 // --- Standard Middlewares ---
