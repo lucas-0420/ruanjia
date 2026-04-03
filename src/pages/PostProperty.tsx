@@ -409,15 +409,25 @@ export default function PostProperty() {
 
       const { mapPropertyToDB } = await import('../context/SupabaseContext');
       const dbData = mapPropertyToDB(propertyData, user.id);
-      if (id) {
-        const { error } = await supabase.from('properties').update(dbData).eq('id', id);
-        if (error) throw error;
-        alert('房源更新成功！');
-      } else {
-        const { error } = await supabase.from('properties').insert({ ...dbData, owner_id: user.id });
-        if (error) throw error;
-        alert('房源刊登成功！');
+
+      const trySave = async (data: any) => {
+        if (id) {
+          const { error } = await supabase.from('properties').update(data).eq('id', id);
+          return error;
+        } else {
+          const { error } = await supabase.from('properties').insert({ ...data, owner_id: user.id });
+          return error;
+        }
+      };
+
+      let error = await trySave(dbData);
+      // 若因 owner_line_id 欄位不存在而失敗，移除後重試
+      if (error && (error.message?.includes('owner_line_id') || error.code === '42703')) {
+        const { owner_line_id, ...dataWithoutLineId } = dbData as any;
+        error = await trySave(dataWithoutLineId);
       }
+      if (error) throw error;
+      alert(id ? '房源更新成功！' : '房源刊登成功！');
       navigate('/listings');
     } catch (error: any) {
       console.error("Submission error:", error);
@@ -515,7 +525,7 @@ export default function PostProperty() {
             </header>
 
             <form onSubmit={handleSubmit} className="space-y-10">
-              {step === 1 && (
+              {(step === 1 || !!id) && (
                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div>
@@ -644,7 +654,7 @@ export default function PostProperty() {
                 </div>
               )}
 
-              {step === 2 && (
+              {(step === 2 || !!id) && (
                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                   <div className="grid grid-cols-3 gap-6">
                     <div>
@@ -730,7 +740,7 @@ export default function PostProperty() {
                 </div>
               )}
 
-              {step === 3 && (
+              {(step === 3 || !!id) && (
                 <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
                   <div>
                     <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-6">提供設施</label>
@@ -1045,7 +1055,7 @@ export default function PostProperty() {
               )}
 
               <div className="flex gap-4 pt-8">
-                {step > 1 && (
+                {!id && step > 1 && (
                   <button
                     type="button"
                     onClick={() => { setStep(step - 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
@@ -1054,7 +1064,7 @@ export default function PostProperty() {
                     上一步
                   </button>
                 )}
-                {step < 3 ? (
+                {!id && step < 3 ? (
                   <button
                     type="button"
                     onClick={() => {

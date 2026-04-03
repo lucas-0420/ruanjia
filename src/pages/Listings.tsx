@@ -113,6 +113,8 @@ export default function Listings() {
     }
 
     if (distanceCenter && filters.maxDistance) {
+      const isDefaultCoord = Math.abs(p.location.lat - 25.033) < 0.001 && Math.abs(p.location.lng - 121.5654) < 0.001;
+      if (isDefaultCoord) return false; // 無真實座標的物件不納入距離篩選
       const km = haversineKm(distanceCenter.lat, distanceCenter.lng, p.location.lat, p.location.lng);
       if (km > Number(filters.maxDistance)) return false;
     }
@@ -120,13 +122,17 @@ export default function Listings() {
     return true;
   });
 
-  // 計算每個物件到距離篩選點的距離
+  // 計算每個物件到距離篩選點的距離（跳過預設座標的物件）
   const distanceMap = React.useMemo(() => {
     if (!distanceCenter) return new Map<string, number>();
-    return new Map(filteredProperties.map(p => [
-      p.id,
-      haversineKm(distanceCenter.lat, distanceCenter.lng, p.location.lat, p.location.lng)
-    ]));
+    const map = new Map<string, number>();
+    filteredProperties.forEach(p => {
+      const isDefaultCoord = Math.abs(p.location.lat - 25.033) < 0.001 && Math.abs(p.location.lng - 121.5654) < 0.001;
+      if (!isDefaultCoord) {
+        map.set(p.id, haversineKm(distanceCenter.lat, distanceCenter.lng, p.location.lat, p.location.lng));
+      }
+    });
+    return map;
   }, [distanceCenter, filteredProperties]);
 
   if (loading) {
