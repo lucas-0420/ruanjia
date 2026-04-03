@@ -25,6 +25,7 @@ export default function PropertyDetail() {
   const [messageContent, setMessageContent] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [similarProperties, setSimilarProperties] = useState<Property[]>([]);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   useEffect(() => {
     async function fetchProperty() {
@@ -35,8 +36,44 @@ export default function PropertyDetail() {
         if (row) {
           const { mapPropertyFromDB } = await import('../context/SupabaseContext');
           const propData = mapPropertyFromDB(row);
+
+          // 取得真實屋主資訊（透過 server API 繞過 RLS）
+          if (row.owner_id) {
+            try {
+              const res = await fetch(`/api/users/${row.owner_id}`);
+              if (res.ok) {
+                const ownerRow = await res.json();
+                propData.owner = {
+                  ...propData.owner,
+                  name: ownerRow.display_name || propData.owner.name || '屋主',
+                  avatar: ownerRow.photo_url || propData.owner.avatar || '',
+                  role: ownerRow.role === 'agent' ? '仲介' : ownerRow.role === 'admin' ? '管理員' : '屋主',
+                  uid: row.owner_id,
+                };
+              }
+            } catch (_) {}
+          }
+
+          // Geocode 地址取得真實座標
+          const apiKey = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY;
+          if (apiKey) {
+            const addr = encodeURIComponent(
+              `${propData.location.city}${propData.location.district}${propData.location.address}台灣`
+            );
+            try {
+              const geo = await fetch(
+                `https://maps.googleapis.com/maps/api/geocode/json?address=${addr}&key=${apiKey}`
+              );
+              const geoJson = await geo.json();
+              const loc = geoJson.results?.[0]?.geometry?.location;
+              if (loc) {
+                propData.location = { ...propData.location, lat: loc.lat, lng: loc.lng };
+              }
+            } catch (_) { /* geocode 失敗不影響頁面 */ }
+          }
+
           setProperty(propData);
-          const { data: similar } = await supabase.from('properties').select('*').eq('city', propData.location.city).neq('id', id).limit(4);
+          const { data: similar } = await supabase.from('properties').select('*').neq('status', 'archived').eq('city', propData.location.city).neq('id', id).limit(4);
           setSimilarProperties((similar || []).map(mapPropertyFromDB));
         }
       } catch (error) {
@@ -132,6 +169,17 @@ export default function PropertyDetail() {
     }
   };
 
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight') setLightboxIndex(i => i !== null ? Math.min(i + 1, property!.images.length - 1) : null);
+      if (e.key === 'ArrowLeft') setLightboxIndex(i => i !== null ? Math.max(i - 1, 0) : null);
+      if (e.key === 'Escape') setLightboxIndex(null);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [lightboxIndex, property]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -160,52 +208,49 @@ export default function PropertyDetail() {
           <Link to="/listings" className="p-2.5 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
             <ChevronLeft className="w-5 h-5 text-gray-600" />
           </Link>
-          <div className="text-sm font-medium text-gray-400">
+          <div className="text-sm font-medium text-gray-400 flex-1">
             <Link to="/listings" className="hover:text-gray-900">房源列表</Link>
             <span className="mx-2">/</span>
             <span className="text-gray-900">{property.title}</span>
           </div>
+          <button
+            onClick={() => property && toggleFavorite(property.id)}
+            className={cn(
+              "w-10 h-10 rounded-xl flex items-center justify-center transition-all shadow-sm border",
+              property && favorites.includes(property.id) ? "bg-orange-600 text-white border-orange-600" : "bg-white text-gray-400 hover:text-orange-600 border-gray-100"
+            )}
+          >
+            <Heart className={cn("w-5 h-5", property && favorites.includes(property.id) && "fill-current")} />
+          </button>
+          <button
+            onClick={handleShare}
+            className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-gray-400 hover:text-gray-900 transition-all shadow-sm border border-gray-100"
+          >
+            <Share2 className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Gallery Section */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-12 h-[400px] md:h-[600px]">
-          <div className="md:col-span-2 h-full rounded-[32px] overflow-hidden shadow-xl">
-            <img
-              src={property.images[0]}
-              alt={property.title}
-              className="w-full h-full object-cover hover:scale-105 transition-transform duration-700"
-              referrerPolicy="no-referrer"
-            />
+          <div className="md:col-span-2 h-full rounded-[32px] overflow-hidden shadow-xl cursor-pointer" onClick={() => setLightboxIndex(0)}>
+            <img src={property.images[0]} alt={property.title} className="w-full h-full object-cover hover:scale-105 transition-transform duration-700" referrerPolicy="no-referrer" />
           </div>
           <div className="hidden md:grid grid-rows-2 gap-4 h-full">
-            <div className="rounded-[32px] overflow-hidden shadow-lg">
-              <img
-                src={property.images[1] || property.images[0]}
-                alt={property.title}
-                className="w-full h-full object-cover hover:scale-105 transition-transform duration-700"
-                referrerPolicy="no-referrer"
-              />
+            <div className="rounded-[32px] overflow-hidden shadow-lg cursor-pointer" onClick={() => setLightboxIndex(1)}>
+              <img src={property.images[1] || property.images[0]} alt={property.title} className="w-full h-full object-cover hover:scale-105 transition-transform duration-700" referrerPolicy="no-referrer" />
             </div>
-            <div className="rounded-[32px] overflow-hidden shadow-lg">
-              <img
-                src={property.images[2] || property.images[0]}
-                alt={property.title}
-                className="w-full h-full object-cover hover:scale-105 transition-transform duration-700"
-                referrerPolicy="no-referrer"
-              />
+            <div className="rounded-[32px] overflow-hidden shadow-lg cursor-pointer" onClick={() => setLightboxIndex(2)}>
+              <img src={property.images[2] || property.images[0]} alt={property.title} className="w-full h-full object-cover hover:scale-105 transition-transform duration-700" referrerPolicy="no-referrer" />
             </div>
           </div>
-          <div className="hidden md:block h-full rounded-[32px] overflow-hidden shadow-lg relative">
-            <img
-              src={property.images[0]}
-              alt={property.title}
-              className="w-full h-full object-cover blur-[2px]"
-              referrerPolicy="no-referrer"
-            />
-            <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white">
-              <span className="text-3xl font-bold mb-2">+ 8</span>
-              <span className="text-sm font-medium uppercase tracking-widest">更多照片</span>
-            </div>
+          <div className="hidden md:block h-full rounded-[32px] overflow-hidden shadow-lg relative cursor-pointer" onClick={() => setLightboxIndex(3)}>
+            <img src={property.images[3] || property.images[0]} alt={property.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+            {property.images.length > 4 && (
+              <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white">
+                <span className="text-3xl font-bold mb-2">+ {property.images.length - 3}</span>
+                <span className="text-sm font-medium uppercase tracking-widest">更多照片</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -240,29 +285,10 @@ export default function PropertyDetail() {
                 {property.location.address}, {property.location.district}, {property.location.city}
               </div>
 
-              <div className="flex items-center justify-between p-8 bg-gray-50 rounded-[32px]">
-                <div className="flex flex-col gap-1">
-                  <span className="text-xs text-gray-400 font-bold uppercase tracking-widest">月租金</span>
-                  <div className="text-4xl font-black text-gray-900">
-                    NT$ {property.price.toLocaleString()}
-                  </div>
-                </div>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => property && toggleFavorite(property.id)}
-                    className={cn(
-                      "w-14 h-14 rounded-2xl flex items-center justify-center transition-all shadow-lg",
-                      property && favorites.includes(property.id) ? "bg-orange-600 text-white" : "bg-white text-gray-400 hover:text-orange-600"
-                    )}
-                  >
-                    <Heart className={cn("w-6 h-6", property && favorites.includes(property.id) && "fill-current")} />
-                  </button>
-                  <button 
-                    onClick={handleShare}
-                    className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-gray-400 hover:text-gray-900 transition-all shadow-lg"
-                  >
-                    <Share2 className="w-6 h-6" />
-                  </button>
+              <div className="p-8 bg-gray-50 rounded-[32px]">
+                <span className="text-xs text-gray-400 font-bold uppercase tracking-widest">月租金</span>
+                <div className="text-4xl font-black text-gray-900 mt-1">
+                  NT$ {property.price.toLocaleString()}
                 </div>
               </div>
             </div>
@@ -423,12 +449,20 @@ export default function PropertyDetail() {
             <div className="sticky top-32 p-10 bg-white rounded-[40px] border border-gray-100 shadow-2xl shadow-gray-200/50">
               <div className="flex items-center gap-5 mb-10">
                 <div className="relative">
-                  <img
-                    src={property.owner.avatar}
-                    alt={property.owner.name}
-                    className="w-20 h-20 rounded-[24px] object-cover shadow-lg"
-                    referrerPolicy="no-referrer"
-                  />
+                  {property.owner.avatar ? (
+                    <img
+                      src={property.owner.avatar}
+                      alt={property.owner.name}
+                      className="w-20 h-20 rounded-[24px] object-cover shadow-lg"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 rounded-[24px] bg-orange-100 flex items-center justify-center shadow-lg">
+                      <span className="text-2xl font-black text-orange-600">
+                        {property.owner.name?.charAt(0) || '屋'}
+                      </span>
+                    </div>
+                  )}
                   <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-green-500 border-4 border-white rounded-full" />
                 </div>
                 <div>
@@ -601,6 +635,39 @@ export default function PropertyDetail() {
                 )}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox */}
+      {lightboxIndex !== null && (
+        <div className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center" onClick={() => setLightboxIndex(null)}>
+          <button className="absolute top-6 right-6 text-white/70 hover:text-white p-2" onClick={() => setLightboxIndex(null)}>
+            <XCircle className="w-8 h-8" />
+          </button>
+          <button
+            className="absolute left-4 text-white/70 hover:text-white p-4 disabled:opacity-20"
+            disabled={lightboxIndex === 0}
+            onClick={e => { e.stopPropagation(); setLightboxIndex(i => Math.max(0, (i ?? 0) - 1)); }}
+          >
+            <ChevronLeft className="w-8 h-8" />
+          </button>
+          <img
+            src={property.images[lightboxIndex]}
+            alt=""
+            className="max-h-[85vh] max-w-[85vw] object-contain rounded-2xl"
+            referrerPolicy="no-referrer"
+            onClick={e => e.stopPropagation()}
+          />
+          <button
+            className="absolute right-4 text-white/70 hover:text-white p-4 disabled:opacity-20"
+            disabled={lightboxIndex === property.images.length - 1}
+            onClick={e => { e.stopPropagation(); setLightboxIndex(i => Math.min(property!.images.length - 1, (i ?? 0) + 1)); }}
+          >
+            <ChevronLeft className="w-8 h-8 rotate-180" />
+          </button>
+          <div className="absolute bottom-6 text-white/60 text-sm font-medium">
+            {lightboxIndex + 1} / {property.images.length}
           </div>
         </div>
       )}

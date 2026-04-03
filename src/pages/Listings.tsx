@@ -1,70 +1,89 @@
 import React from 'react';
-import FilterBar from '../components/FilterBar';
+import FilterBar, { DEFAULT_FILTERS, Filters } from '../components/FilterBar';
 import PropertyGrid from '../components/PropertyGrid';
 import MapComponent from '../components/MapComponent';
 import { Map, LayoutGrid } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useFirebase } from '../context/SupabaseContext';
+import { useSearchParams } from 'react-router-dom';
+
+function priceInRange(price: number, ranges: string[], customMin: string, customMax: string): boolean {
+  // Custom range check
+  const min = customMin ? Number(customMin) : null;
+  const max = customMax ? Number(customMax) : null;
+  if (min !== null || max !== null) {
+    const aboveMin = min === null || price >= min;
+    const belowMax = max === null || price <= max;
+    if (aboveMin && belowMax) return true;
+  }
+  // Preset ranges
+  if (ranges.length === 0 && !customMin && !customMax) return true;
+  return ranges.some(r => {
+    if (r === '30000+') return price >= 30000;
+    const [lo, hi] = r.split('-').map(Number);
+    return price >= lo && price <= hi;
+  });
+}
+
+function areaInRanges(area: number, ranges: string[]): boolean {
+  if (ranges.length === 0) return true;
+  return ranges.some(r => {
+    if (r === '50+') return area >= 50;
+    const [lo, hi] = r.split('-').map(Number);
+    return area >= lo && area <= hi;
+  });
+}
+
+function floorInRanges(floor: number, ranges: string[]): boolean {
+  if (ranges.length === 0) return true;
+  return ranges.some(r => {
+    if (r === '12+') return floor >= 12;
+    if (r === '1') return floor === 1;
+    const [lo, hi] = r.split('-').map(Number);
+    return floor >= lo && floor <= hi;
+  });
+}
+
+function bathroomsMatch(baths: number, selected: string[]): boolean {
+  if (selected.length === 0) return true;
+  return selected.some(r => r === '4+' ? baths >= 4 : baths === Number(r));
+}
 
 export default function Listings() {
+  const [searchParams] = useSearchParams();
+  const initialQ = searchParams.get('q') || '';
+  const initialFilters: Partial<Filters> = {
+    city: searchParams.get('city') || '台中市',
+  };
   const [viewMode, setViewMode] = React.useState<'grid' | 'map'>('grid');
-  const [searchQuery, setSearchQuery] = React.useState('');
-  const [filters, setFilters] = React.useState({
-    city: 'all',
-    district: 'all',
-    priceRange: 'all',
-    type: 'all',
-    rooms: 'all',
-    area: 'all',
-  });
+  const [searchQuery, setSearchQuery] = React.useState(initialQ);
+  const [filters, setFilters] = React.useState<Filters>({ ...DEFAULT_FILTERS, ...initialFilters });
   const { properties, loading } = useFirebase();
 
   const filteredProperties = properties.filter(p => {
-    // Search query check
-    const matchesSearch = 
-      p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.location.city.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.location.district.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.location.address.toLowerCase().includes(searchQuery.toLowerCase());
+    const q = searchQuery.toLowerCase();
+    if (q && !(
+      p.title.toLowerCase().includes(q) ||
+      p.location.city.toLowerCase().includes(q) ||
+      p.location.district.toLowerCase().includes(q) ||
+      p.location.address.toLowerCase().includes(q)
+    )) return false;
 
-    if (!matchesSearch) return false;
-
-    // City check
     if (filters.city !== 'all' && p.location.city !== filters.city) return false;
-
-    // District check
-    if (filters.district !== 'all' && p.location.district !== filters.district) return false;
-
-    // Price range check
-    if (filters.priceRange !== 'all') {
-      const [min, max] = filters.priceRange.split('-').map(Number);
-      if (filters.priceRange === '30000+') {
-        if (p.price < 30000) return false;
-      } else {
-        if (p.price < min || p.price > max) return false;
-      }
+    if (filters.district.length > 0 && !filters.district.includes(p.location.district)) return false;
+    if (!priceInRange(p.price, filters.priceRange, filters.customPriceMin, filters.customPriceMax)) return false;
+    if (filters.type.length > 0 && !filters.type.includes(p.type)) return false;
+    if (filters.rooms.length > 0) {
+      const beds = p.features.bedrooms;
+      const match = filters.rooms.some(r => r === '4+' ? beds >= 4 : beds === Number(r));
+      if (!match) return false;
     }
-
-    // Type check
-    if (filters.type !== 'all' && p.type !== filters.type) return false;
-
-    // Rooms check
-    if (filters.rooms !== 'all') {
-      if (filters.rooms === '4+') {
-        if (p.features.bedrooms < 4) return false;
-      } else {
-        if (p.features.bedrooms !== Number(filters.rooms)) return false;
-      }
-    }
-
-    // Area check
-    if (filters.area !== 'all') {
-      const [min, max] = filters.area.split('-').map(Number);
-      if (filters.area === '30+') {
-        if (p.features.area < 30) return false;
-      } else {
-        if (p.features.area < min || p.features.area > max) return false;
-      }
+    if (!areaInRanges(p.features.area, filters.area)) return false;
+    if (!floorInRanges(p.features.floor, filters.floor)) return false;
+    if (!bathroomsMatch(p.features.bathrooms, filters.bathrooms)) return false;
+    if (filters.equipment.length > 0) {
+      const amenities: string[] = p.amenities ?? [];
+      if (!filters.equipment.every(e => amenities.includes(e))) return false;
     }
 
     return true;
@@ -80,7 +99,7 @@ export default function Listings() {
 
   return (
     <div className="min-h-screen bg-white pt-16">
-      <FilterBar onSearch={setSearchQuery} onFilterChange={setFilters} />
+      <FilterBar onSearch={setSearchQuery} onFilterChange={setFilters} initialSearch={initialQ} initialFilters={{ ...DEFAULT_FILTERS, ...initialFilters }} />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}

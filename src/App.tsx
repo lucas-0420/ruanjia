@@ -7,6 +7,8 @@ import PropertyDetail from './pages/PropertyDetail';
 import Favorites from './pages/Favorites';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminSync from './pages/AdminSync';
+import AdminUsers from './pages/AdminUsers';
+import AgentDashboard from './pages/AgentDashboard';
 import PostProperty from './pages/PostProperty';
 import Profile from './pages/Profile';
 import AIAssistant from './components/AIAssistant';
@@ -46,6 +48,8 @@ export default function App() {
               <Route path="/listings" element={<Listings />} />
               <Route path="/property/:id" element={<PropertyDetail />} />
               <Route path="/favorites" element={<Favorites />} />
+              <Route path="/manage" element={<AdminUsers />} />
+              <Route path="/agent" element={<AgentDashboard />} />
               <Route path="/admin" element={<AdminDashboard />} />
               <Route path="/admin/sync" element={<AdminSync />} />
               <Route path="/admin/edit/:id" element={<PostProperty />} />

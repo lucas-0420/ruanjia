@@ -13,10 +13,16 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
 export default function PostProperty() {
-  const { user, login, isAuthReady } = useFirebase();
+  const { user, userRole, login, isAuthReady } = useFirebase();
   const navigate = useNavigate();
   const { id } = useParams();
   const location = useLocation();
+
+  useEffect(() => {
+    if (isAuthReady && user && userRole !== 'agent' && userRole !== 'admin') {
+      navigate('/');
+    }
+  }, [isAuthReady, user, userRole]);
 
   useEffect(() => {
     if (location.state?.prefill) {
@@ -56,7 +62,14 @@ export default function PostProperty() {
   }
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
+  const [errors, setErrors] = React.useState<Record<string, string>>({});
   const [uploading, setUploading] = useState(false);
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const dragIndexRef = React.useRef<number | null>(null);
+  const [selectedImages, setSelectedImages] = React.useState<Set<number>>(new Set());
+  const [video, setVideo] = React.useState<string>('');
+  const [uploadingVideo, setUploadingVideo] = React.useState(false);
+  const videoInputRef = React.useRef<HTMLInputElement>(null);
   const [step, setStep] = useState(1);
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [aiInput, setAiInput] = useState('');
@@ -258,38 +271,90 @@ export default function PostProperty() {
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !user) return;
+    const files = Array.from(e.target.files || []) as File[];
+    if (!files.length || !user) return;
 
-    // Basic validation
-    if (!file.type.startsWith('image/')) {
-      alert('請上傳圖片檔案');
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      alert('檔案大小不能超過 5MB');
-      return;
-    }
+    const invalid = files.find((f: File) => !f.type.startsWith('image/') || f.size > 5 * 1024 * 1024);
+    if (invalid) { alert('請上傳圖片檔案，每張不超過 5MB'); return; }
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { alert('未登入'); return; }
 
     setUploading(true);
+    setUploadingCount(files.length);
     try {
-      const fileName = `properties/${user.id}/${Date.now()}-${file.name}`;
-      const { error: upErr } = await supabase.storage.from('property-images').upload(fileName, file);
-      if (upErr) throw upErr;
-      const { data: urlData } = supabase.storage.from('property-images').getPublicUrl(fileName);
-      setFormData(prev => ({ ...prev, images: [...prev.images, urlData.publicUrl] }));
-    } catch (error) {
-      console.error("Upload error:", error);
-      alert('圖片上傳失敗，請稍後再試');
+      const urls = await Promise.all(files.map(async file => {
+        const res = await fetch('/api/upload/image', {
+          method: 'POST',
+          headers: { 'Content-Type': file.type, Authorization: `Bearer ${session.access_token}` },
+          body: file,
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || '上傳失敗');
+        return json.url as string;
+      }));
+      setFormData(prev => ({ ...prev, images: [...prev.images, ...urls] }));
+    } catch (error: any) {
+      alert(`圖片上傳失敗：${error?.message}`);
     } finally {
       setUploading(false);
+      setUploadingCount(0);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  };
+
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] as File | undefined;
+    if (!file) return;
+    if (!file.type.startsWith('video/')) { alert('請上傳影片檔案'); return; }
+    if (file.size > 50 * 1024 * 1024) { alert('影片大小不能超過 50MB'); return; }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { alert('未登入'); return; }
+    setUploadingVideo(true);
+    try {
+      const res = await fetch('/api/upload/image', {
+        method: 'POST',
+        headers: { 'Content-Type': file.type, Authorization: `Bearer ${session.access_token}` },
+        body: file,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || '上傳失敗');
+      setVideo(json.url);
+    } catch (err: any) {
+      alert(`影片上傳失敗：${err?.message}`);
+    } finally {
+      setUploadingVideo(false);
+      if (videoInputRef.current) videoInputRef.current.value = '';
+    }
+  };
+
+  const validateStep = (s: number): Record<string, string> => {
+    const e: Record<string, string> = {};
+    if (s === 1) {
+      if (!formData.title.trim()) e.title = '請填寫標題';
+      if (!formData.price || Number(formData.price) <= 0) e.price = '請填寫租金';
+      if (!formData.city || formData.city === 'all') e.city = '請選擇縣市';
+      if (!formData.district || formData.district === 'all') e.district = '請選擇行政區';
+      if (!formData.address.trim()) e.address = '請填寫地址';
+    }
+    if (s === 2) {
+      if (!formData.bedrooms || Number(formData.bedrooms) < 0) e.bedrooms = '請填寫';
+      if (!formData.bathrooms || Number(formData.bathrooms) < 0) e.bathrooms = '請填寫';
+      if (!formData.area || Number(formData.area) <= 0) e.area = '請填寫坪數';
+      if (!formData.floor || Number(formData.floor) <= 0) e.floor = '請填寫樓層';
+      if (!formData.totalFloors || Number(formData.totalFloors) <= 0) e.totalFloors = '請填寫總樓層';
+    }
+    if (s === 3) {
+      if (!formData.description.trim()) e.description = '請填寫房源介紹';
+    }
+    return e;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    const errs = validateStep(3);
+    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
 
     setLoading(true);
     try {
@@ -297,13 +362,20 @@ export default function PostProperty() {
         title: formData.title,
         price: Number(formData.price),
         type: formData.type,
-        location: {
-          city: formData.city,
-          district: formData.district,
-          address: formData.address,
-          lat: 25.0330, // Default to Taipei for now
-          lng: 121.5654
-        },
+        location: await (async () => {
+          let lat = 25.0330, lng = 121.5654;
+          const apiKey = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY;
+          if (apiKey) {
+            try {
+              const addr = encodeURIComponent(`${formData.city}${formData.district}${formData.address}台灣`);
+              const geo = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${addr}&key=${apiKey}`);
+              const geoJson = await geo.json();
+              const loc = geoJson.results?.[0]?.geometry?.location;
+              if (loc) { lat = loc.lat; lng = loc.lng; }
+            } catch (_) {}
+          }
+          return { city: formData.city, district: formData.district, address: formData.address, lat, lng };
+        })(),
         features: {
           bedrooms: Number(formData.bedrooms),
           bathrooms: Number(formData.bathrooms),
@@ -317,10 +389,10 @@ export default function PostProperty() {
         images: formData.images.length > 0 ? formData.images : ['https://picsum.photos/seed/property/800/600'],
         description: formData.description,
         owner: id && formData.owner ? formData.owner : {
-          name: user.displayName || '匿名屋主',
-          phone: '', 
-          avatar: user.photoURL || 'https://picsum.photos/seed/avatar/100/100',
-          uid: user.uid,
+          name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '屋主',
+          phone: '',
+          avatar: user.user_metadata?.avatar_url || '',
+          uid: user.id,
           role: '屋主'
         },
         isZeroFee: formData.isZeroFee,
@@ -442,26 +514,26 @@ export default function PostProperty() {
                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div>
-                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">房源標題</label>
-                      <input 
-                        type="text" 
-                        required
+                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">房源標題 <span className="text-red-500">*</span></label>
+                      <input
+                        type="text"
                         placeholder="例如：近捷運 景觀兩房"
                         value={formData.title}
-                        onChange={(e) => setFormData({...formData, title: e.target.value})}
-                        className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium"
+                        onChange={(e) => { setFormData({...formData, title: e.target.value}); setErrors(p => ({...p, title: ''})); }}
+                        className={cn("w-full px-6 py-4 bg-gray-50 border-2 rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium", errors.title ? "border-red-400 bg-red-50" : "border-transparent")}
                       />
+                      {errors.title && <p className="mt-1 text-xs text-red-500">{errors.title}</p>}
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">月租金 (NT$)</label>
-                      <input 
-                        type="number" 
-                        required
+                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">月租金 (NT$) <span className="text-red-500">*</span></label>
+                      <input
+                        type="number"
                         placeholder="25000"
                         value={formData.price}
-                        onChange={(e) => setFormData({...formData, price: e.target.value})}
-                        className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium"
+                        onChange={(e) => { setFormData({...formData, price: e.target.value}); setErrors(p => ({...p, price: ''})); }}
+                        className={cn("w-full px-6 py-4 bg-gray-50 border-2 rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium", errors.price ? "border-red-400 bg-red-50" : "border-transparent")}
                       />
+                      {errors.price && <p className="mt-1 text-xs text-red-500">{errors.price}</p>}
                     </div>
                   </div>
 
@@ -480,11 +552,11 @@ export default function PostProperty() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">縣市</label>
-                      <select 
+                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">縣市 <span className="text-red-500">*</span></label>
+                      <select
                         value={formData.city}
-                        onChange={(e) => setFormData({...formData, city: e.target.value})}
-                        className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium appearance-none"
+                        onChange={(e) => { setFormData({...formData, city: e.target.value, district: ''}); setErrors(p => ({...p, city: ''})); }}
+                        className={cn("w-full px-6 py-4 bg-gray-50 border-2 rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium appearance-none", errors.city ? "border-red-400 bg-red-50" : "border-transparent")}
                       >
                         <option value="台北市">台北市</option>
                         <option value="新北市">新北市</option>
@@ -493,13 +565,14 @@ export default function PostProperty() {
                         <option value="新竹縣">新竹縣</option>
                         <option value="台中市">台中市</option>
                       </select>
+                      {errors.city && <p className="mt-1 text-xs text-red-500">{errors.city}</p>}
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">行政區</label>
-                      <select 
+                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">行政區 <span className="text-red-500">*</span></label>
+                      <select
                         value={formData.district}
-                        onChange={(e) => setFormData({...formData, district: e.target.value})}
-                        className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium appearance-none"
+                        onChange={(e) => { setFormData({...formData, district: e.target.value}); setErrors(p => ({...p, district: ''})); }}
+                        className={cn("w-full px-6 py-4 bg-gray-50 border-2 rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium appearance-none", errors.district ? "border-red-400 bg-red-50" : "border-transparent")}
                       >
                         <option value="">請選擇行政區</option>
                         {formData.city === '台北市' && (
@@ -548,19 +621,20 @@ export default function PostProperty() {
                           </>
                         )}
                       </select>
+                      {errors.district && <p className="mt-1 text-xs text-red-500">{errors.district}</p>}
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">詳細地址</label>
-                    <input 
-                      type="text" 
-                      required
+                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">詳細地址 <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
                       placeholder="例如：信義路五段 7 號"
                       value={formData.address}
-                      onChange={(e) => setFormData({...formData, address: e.target.value})}
-                      className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium"
+                      onChange={(e) => { setFormData({...formData, address: e.target.value}); setErrors(p => ({...p, address: ''})); }}
+                      className={cn("w-full px-6 py-4 bg-gray-50 border-2 rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium", errors.address ? "border-red-400 bg-red-50" : "border-transparent")}
                     />
+                    {errors.address && <p className="mt-1 text-xs text-red-500">{errors.address}</p>}
                   </div>
                 </div>
               )}
@@ -569,60 +643,60 @@ export default function PostProperty() {
                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                   <div className="grid grid-cols-3 gap-6">
                     <div>
-                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">房間</label>
-                      <input 
-                        type="number" 
-                        required
+                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">房間 <span className="text-red-500">*</span></label>
+                      <input
+                        type="number"
                         value={formData.bedrooms}
-                        onChange={(e) => setFormData({...formData, bedrooms: e.target.value})}
-                        className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium"
+                        onChange={(e) => { setFormData({...formData, bedrooms: e.target.value}); setErrors(p => ({...p, bedrooms: ''})); }}
+                        className={cn("w-full px-6 py-4 bg-gray-50 border-2 rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium", errors.bedrooms ? "border-red-400 bg-red-50" : "border-transparent")}
                       />
+                      {errors.bedrooms && <p className="mt-1 text-xs text-red-500">{errors.bedrooms}</p>}
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">衛浴</label>
-                      <input 
-                        type="number" 
-                        required
+                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">衛浴 <span className="text-red-500">*</span></label>
+                      <input
+                        type="number"
                         value={formData.bathrooms}
-                        onChange={(e) => setFormData({...formData, bathrooms: e.target.value})}
-                        className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium"
+                        onChange={(e) => { setFormData({...formData, bathrooms: e.target.value}); setErrors(p => ({...p, bathrooms: ''})); }}
+                        className={cn("w-full px-6 py-4 bg-gray-50 border-2 rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium", errors.bathrooms ? "border-red-400 bg-red-50" : "border-transparent")}
                       />
+                      {errors.bathrooms && <p className="mt-1 text-xs text-red-500">{errors.bathrooms}</p>}
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">坪數</label>
-                      <input 
-                        type="number" 
-                        required
+                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">坪數 <span className="text-red-500">*</span></label>
+                      <input
+                        type="number"
                         placeholder="15"
                         value={formData.area}
-                        onChange={(e) => setFormData({...formData, area: e.target.value})}
-                        className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium"
+                        onChange={(e) => { setFormData({...formData, area: e.target.value}); setErrors(p => ({...p, area: ''})); }}
+                        className={cn("w-full px-6 py-4 bg-gray-50 border-2 rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium", errors.area ? "border-red-400 bg-red-50" : "border-transparent")}
                       />
+                      {errors.area && <p className="mt-1 text-xs text-red-500">{errors.area}</p>}
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-8">
                     <div>
-                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">樓層</label>
-                      <input 
-                        type="number" 
-                        required
+                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">樓層 <span className="text-red-500">*</span></label>
+                      <input
+                        type="number"
                         placeholder="5"
                         value={formData.floor}
-                        onChange={(e) => setFormData({...formData, floor: e.target.value})}
-                        className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium"
+                        onChange={(e) => { setFormData({...formData, floor: e.target.value}); setErrors(p => ({...p, floor: ''})); }}
+                        className={cn("w-full px-6 py-4 bg-gray-50 border-2 rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium", errors.floor ? "border-red-400 bg-red-50" : "border-transparent")}
                       />
+                      {errors.floor && <p className="mt-1 text-xs text-red-500">{errors.floor}</p>}
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">總樓層</label>
-                      <input 
-                        type="number" 
-                        required
+                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">總樓層 <span className="text-red-500">*</span></label>
+                      <input
+                        type="number"
                         placeholder="12"
                         value={formData.totalFloors}
-                        onChange={(e) => setFormData({...formData, totalFloors: e.target.value})}
-                        className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium"
+                        onChange={(e) => { setFormData({...formData, totalFloors: e.target.value}); setErrors(p => ({...p, totalFloors: ''})); }}
+                        className={cn("w-full px-6 py-4 bg-gray-50 border-2 rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium", errors.totalFloors ? "border-red-400 bg-red-50" : "border-transparent")}
                       />
+                      {errors.totalFloors && <p className="mt-1 text-xs text-red-500">{errors.totalFloors}</p>}
                     </div>
                   </div>
 
@@ -681,107 +755,171 @@ export default function PostProperty() {
                   </div>
 
                   <div>
-                    <div className="flex items-center justify-between mb-6">
-                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest">房源照片</label>
-                      <div className="flex gap-4">
-                        <input 
-                          type="file" 
-                          ref={fileInputRef}
-                          onChange={handleFileUpload}
-                          className="hidden"
-                          accept="image/*"
-                        />
-                        <button 
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          disabled={uploading}
-                          className="text-xs font-bold text-orange-600 flex items-center gap-1 hover:text-orange-700 transition-colors disabled:opacity-50"
-                        >
-                          {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
-                          上傳照片
-                        </button>
-                        <button 
-                          type="button"
-                          onClick={() => setFormData({...formData, images: [...formData.images, '']})}
-                          className="text-xs font-bold text-gray-400 flex items-center gap-1 hover:text-gray-600 transition-colors"
-                        >
-                          <Plus className="w-3 h-3" />
-                          新增網址
-                        </button>
+                    <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*" multiple />
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">房源照片</label>
+                        <p className="text-xs text-gray-400">最多上傳15張，支援 JPG、PNG，單張不超過 5MB</p>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploading}
+                        className="flex items-center gap-2 px-4 py-2 border-2 border-gray-200 rounded-xl text-sm font-bold text-gray-700 hover:border-orange-600 hover:text-orange-600 transition-all disabled:opacity-50"
+                      >
+                        {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                        本機上傳照片
+                      </button>
                     </div>
-                    
-                    <div className="space-y-4">
-                      {formData.images.length === 0 && !uploading ? (
-                        <div 
-                          onClick={() => fileInputRef.current?.click()}
-                          className="w-full py-12 border-2 border-dashed border-gray-200 rounded-[32px] flex flex-col items-center justify-center gap-4 text-gray-400 hover:border-orange-600 hover:text-orange-600 transition-all cursor-pointer bg-gray-50/50"
-                        >
-                          <ImageIcon className="w-10 h-10" />
-                          <p className="font-bold">點擊上傳房源照片</p>
-                          <p className="text-xs">支援 JPG, PNG 格式，大小不超過 5MB</p>
+
+                    {formData.images.length === 0 && !uploading ? (
+                      <div
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-full py-16 border-2 border-dashed border-gray-200 rounded-[32px] flex flex-col items-center justify-center gap-4 text-gray-400 hover:border-orange-600 hover:text-orange-600 transition-all cursor-pointer"
+                      >
+                        <ImageIcon className="w-10 h-10" />
+                        <p className="font-bold">點擊上傳房源照片</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedImages.size === formData.images.length && formData.images.length > 0}
+                              onChange={e => setSelectedImages(e.target.checked ? new Set(formData.images.map((_, i) => i)) : new Set())}
+                              className="w-4 h-4 accent-orange-600"
+                            />
+                            <span className="text-xs font-bold text-gray-500">全選</span>
+                            {selectedImages.size > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFormData(prev => ({ ...prev, images: prev.images.filter((_, i) => !selectedImages.has(i)) }));
+                                  setSelectedImages(new Set());
+                                }}
+                                className="text-xs font-bold text-red-500 hover:text-red-700"
+                              >
+                                刪除選中（{selectedImages.size}）
+                              </button>
+                            )}
+                          </div>
+                          {selectedImages.size === 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const idx = Array.from(selectedImages)[0];
+                                if (idx === 0) return;
+                                const imgs = [...formData.images];
+                                imgs.splice(0, 0, imgs.splice(idx, 1)[0]);
+                                setFormData(prev => ({ ...prev, images: imgs }));
+                                setSelectedImages(new Set([0]));
+                              }}
+                              className="text-xs font-bold text-orange-600 hover:text-orange-700"
+                            >
+                              設為封面
+                            </button>
+                          )}
                         </div>
-                      ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                           {formData.images.map((url, index) => (
-                            <div key={index} className="relative group">
-                              <div className="aspect-video bg-gray-100 rounded-2xl overflow-hidden border-2 border-gray-100 group-focus-within:border-orange-600 transition-all">
-                                {url ? (
-                                  <img 
-                                    src={url} 
-                                    alt={`Preview ${index}`} 
-                                    className="w-full h-full object-cover"
-                                    referrerPolicy="no-referrer"
-                                    onError={(e) => {
-                                      (e.target as HTMLImageElement).src = 'https://picsum.photos/seed/error/800/600?text=Invalid+URL';
-                                    }}
-                                  />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center text-gray-300">
-                                    <ImageIcon className="w-8 h-8" />
-                                  </div>
-                                )}
+                            <div
+                              key={index}
+                              draggable
+                              onDragStart={() => { dragIndexRef.current = index; }}
+                              onDragOver={e => e.preventDefault()}
+                              onDrop={() => {
+                                const from = dragIndexRef.current;
+                                if (from === null || from === index) return;
+                                const imgs = [...formData.images];
+                                imgs.splice(index, 0, imgs.splice(from, 1)[0]);
+                                setFormData(prev => ({ ...prev, images: imgs }));
+                                dragIndexRef.current = null;
+                              }}
+                              className={cn("relative group rounded-2xl overflow-hidden border-2 transition-all cursor-grab active:cursor-grabbing",
+                                selectedImages.has(index) ? "border-orange-500" : "border-gray-100 hover:border-orange-300"
+                              )}
+                            >
+                              <div className="aspect-[4/3] bg-gray-100">
+                                <img src={url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                               </div>
-                              <div className="mt-2 flex gap-2">
-                                <input 
-                                  type="text" 
-                                  value={url}
-                                  onChange={(e) => {
-                                    const newImages = [...formData.images];
-                                    newImages[index] = e.target.value;
-                                    setFormData({...formData, images: newImages});
-                                  }}
-                                  className="flex-1 px-4 py-2 bg-gray-100 border-none rounded-xl text-xs font-medium focus:ring-2 focus:ring-orange-600 outline-none"
-                                  placeholder="圖片網址..."
-                                />
-                                <button 
+                              <input
+                                type="checkbox"
+                                checked={selectedImages.has(index)}
+                                onChange={e => {
+                                  const next = new Set(selectedImages);
+                                  e.target.checked ? next.add(index) : next.delete(index);
+                                  setSelectedImages(next);
+                                }}
+                                className="absolute top-2 right-2 w-4 h-4 accent-orange-600"
+                                onClick={e => e.stopPropagation()}
+                              />
+                              {index === 0 && (
+                                <span className="absolute top-2 left-2 bg-orange-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">封面</span>
+                              )}
+                              <div className="absolute bottom-0 left-0 right-0 bg-black/60 flex items-center justify-between px-2 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <span className="text-white text-[10px] font-bold">{index + 1} / {formData.images.length}</span>
+                                <button
                                   type="button"
                                   onClick={() => {
-                                    const newImages = formData.images.filter((_, i) => i !== index);
-                                    setFormData({...formData, images: newImages});
+                                    setFormData(prev => ({ ...prev, images: prev.images.filter((_, i) => i !== index) }));
+                                    setSelectedImages(prev => { const n = new Set<number>(); prev.forEach(i => i < index ? n.add(i) : i > index ? n.add(i - 1) : null); return n; });
                                   }}
-                                  className="p-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors"
+                                  className="w-6 h-6 flex items-center justify-center text-white hover:text-red-400 transition-colors"
                                 >
-                                  <Trash2 className="w-4 h-4" />
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             </div>
                           ))}
                           {uploading && (
-                            <div className="aspect-video bg-gray-50 rounded-2xl border-2 border-dashed border-orange-200 flex flex-col items-center justify-center gap-3 text-orange-600">
-                              <Loader2 className="w-8 h-8 animate-spin" />
+                            <div className="aspect-[4/3] bg-gray-50 rounded-2xl border-2 border-dashed border-orange-200 flex flex-col items-center justify-center gap-2 text-orange-600">
+                              <Loader2 className="w-6 h-6 animate-spin" />
                               <p className="text-xs font-bold">上傳中...</p>
                             </div>
                           )}
                         </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* 影片上傳 */}
+                  <div>
+                    <input type="file" ref={videoInputRef} onChange={handleVideoUpload} className="hidden" accept="video/*" />
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">房源影片</label>
+                        <p className="text-xs text-gray-400">最多 1 部，不超過 50MB</p>
+                      </div>
+                      {!video && (
+                        <button type="button" onClick={() => videoInputRef.current?.click()} disabled={uploadingVideo}
+                          className="flex items-center gap-2 px-4 py-2 border-2 border-gray-200 rounded-xl text-sm font-bold text-gray-700 hover:border-orange-600 hover:text-orange-600 transition-all disabled:opacity-50">
+                          {uploadingVideo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                          上傳影片
+                        </button>
                       )}
                     </div>
+                    {video ? (
+                      <div className="relative rounded-2xl overflow-hidden bg-black">
+                        <video src={video} controls className="w-full max-h-64 object-contain" />
+                        <button type="button" onClick={() => setVideo('')}
+                          className="absolute top-2 right-2 w-7 h-7 bg-black/60 text-white rounded-lg flex items-center justify-center hover:bg-red-600 transition-colors">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : uploadingVideo && (
+                      <div className="h-24 bg-gray-50 rounded-2xl border-2 border-dashed border-orange-200 flex items-center justify-center gap-2 text-orange-600">
+                        <Loader2 className="w-6 h-6 animate-spin" />
+                        <span className="text-xs font-bold">上傳中...</span>
+                      </div>
+                    )}
                   </div>
 
                   <div>
                     <div className="flex items-center justify-between mb-3">
-                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">房源介紹</label>
-                      <button 
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">房源介紹 <span className="text-red-500">*</span></label>
+                      <button
                         type="button"
                         onClick={handleAiGenerateDescription}
                         disabled={isAiProcessing || !formData.title}
@@ -795,14 +933,14 @@ export default function PostProperty() {
                         AI 協助生成描述
                       </button>
                     </div>
-                    <textarea 
+                    <textarea
                       rows={6}
-                      required
                       placeholder="詳細描述房源的優點、生活機能、交通狀況等..."
                       value={formData.description}
-                      onChange={(e) => setFormData({...formData, description: e.target.value})}
-                      className="w-full px-6 py-4 bg-gray-50 border-none rounded-3xl focus:ring-2 focus:ring-orange-600 font-medium resize-none"
+                      onChange={(e) => { setFormData({...formData, description: e.target.value}); setErrors(p => ({...p, description: ''})); }}
+                      className={cn("w-full px-6 py-4 bg-gray-50 border-2 rounded-3xl focus:ring-2 focus:ring-orange-600 font-medium resize-none", errors.description ? "border-red-400 bg-red-50" : "border-transparent")}
                     />
+                    {errors.description && <p className="mt-1 text-xs text-red-500">{errors.description}</p>}
                   </div>
 
                   <div>
@@ -878,7 +1016,7 @@ export default function PostProperty() {
                 {step > 1 && (
                   <button
                     type="button"
-                    onClick={() => setStep(step - 1)}
+                    onClick={() => { setStep(step - 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
                     className="flex-1 bg-gray-100 text-gray-900 py-5 rounded-2xl font-bold hover:bg-gray-200 transition-all"
                   >
                     上一步
@@ -887,7 +1025,13 @@ export default function PostProperty() {
                 {step < 3 ? (
                   <button
                     type="button"
-                    onClick={() => setStep(step + 1)}
+                    onClick={() => {
+                      const errs = validateStep(step);
+                      if (Object.keys(errs).length > 0) { setErrors(errs); return; }
+                      setErrors({});
+                      setStep(step + 1);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
                     className="flex-[2] bg-gray-900 text-white py-5 rounded-2xl font-bold hover:bg-gray-800 transition-all shadow-xl shadow-gray-900/10"
                   >
                     下一步

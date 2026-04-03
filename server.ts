@@ -420,16 +420,25 @@ app.post(webhookPaths, express.raw({ type: '*/*' }), async (req, res) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+const ADMIN_EMAIL = '0420.lucas111@gmail.com';
+
 // Admin Auth Middleware
 const requireAdmin = async (req: any, res: any, next: any) => {
   const token = req.headers['authorization']?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: '未授權' });
   try {
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-    if (error || !user) return res.status(401).json({ error: 'Token 無效' });
-    const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single();
-    if (!profile || profile.role !== 'admin') return res.status(403).json({ error: '權限不足' });
-    req.user = user;
+    // Decode JWT payload (base64) to get user id + email without extra network call
+    const parts = token.split('.');
+    if (parts.length !== 3) return res.status(401).json({ error: 'Token 無效' });
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    const userId: string = payload.sub;
+    const userEmail: string = payload.email || '';
+    if (!userId) return res.status(401).json({ error: 'Token 無效' });
+
+    const isAdmin = userEmail === ADMIN_EMAIL ||
+      (await supabase.from('users').select('role').eq('id', userId).single()).data?.role === 'admin';
+    if (!isAdmin) return res.status(403).json({ error: '權限不足' });
+    req.user = { id: userId, email: userEmail };
     next();
   } catch {
     return res.status(401).json({ error: 'Token 無效' });
@@ -439,6 +448,59 @@ const requireAdmin = async (req: any, res: any, next: any) => {
 // Admin Logs API
 app.get('/api/admin/logs', requireAdmin, (req, res) => {
   res.json({ logs: serverLogs });
+});
+
+// Debug endpoint (temporary)
+app.get('/api/debug/users', async (req, res) => {
+  const { data, error } = await supabase.from('users').select('id, email, role').order('created_at', { ascending: false });
+  res.json({ users: data, error: error?.message });
+});
+
+// Admin Users API (service role bypasses RLS)
+app.get('/api/admin/users', requireAdmin, async (req, res) => {
+  const { data, error } = await supabase.from('users').select('*').order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ users: data });
+});
+
+// Image upload API (service role bypasses storage RLS)
+app.post('/api/upload/image', express.raw({ type: () => true, limit: '55mb' }), async (req: any, res: any) => {
+  const token = req.headers['authorization']?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: '未授權' });
+  try {
+    const parts = token.split('.');
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    if (!payload.sub) return res.status(401).json({ error: 'Token 無效' });
+  } catch { return res.status(401).json({ error: 'Token 無效' }); }
+
+  const mimeType = ((req.headers['content-type'] as string) || 'image/jpeg').split(';')[0].trim();
+  const ext = mimeType.split('/')[1]?.split('+')[0] || 'jpg';
+  const fileName = `properties/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const { error } = await supabase.storage.from('property-images').upload(fileName, req.body, { contentType: mimeType });
+  if (error) return res.status(500).json({ error: error.message });
+  const { data } = supabase.storage.from('property-images').getPublicUrl(fileName);
+  res.json({ url: data.publicUrl });
+});
+
+// Public user profile (no auth needed, only exposes safe fields)
+app.get('/api/users/:id', async (req, res) => {
+  const { id } = req.params;
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, display_name, photo_url, role')
+    .eq('id', id)
+    .single();
+  if (error) return res.status(404).json({ error: '找不到用戶' });
+  res.json(data);
+});
+
+app.patch('/api/admin/users/:id/role', requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { role } = req.body;
+  if (!['user', 'agent', 'admin'].includes(role)) return res.status(400).json({ error: '無效角色' });
+  const { error } = await supabase.from('users').update({ role }).eq('id', id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
 });
 
 app.post('/api/admin/test-log', requireAdmin, (req, res) => {
@@ -486,7 +548,7 @@ app.post('/api/ai/autofill', async (req, res) => {
   try {
     const prompt = `你是一位專業的房地產助手。請從以下房源描述中提取資訊，只回傳 JSON，不要其他文字。\n描述：${text.substring(0,2000)}\nJSON格式：{"title":"","price":0,"type":"apartment","city":"","district":"","address":"","bedrooms":0,"bathrooms":0,"area":0,"floor":0,"totalFloors":0,"managementFee":0,"deposit":"兩個月","amenities":[],"description":""}`;
     const response = await ai.models.generateContent({ model: "gemini-2.0-flash", contents: prompt, config: { responseMimeType: "application/json" } });
-    const result = JSON.parse(response.text.replace(/```json|```/g,'').trim());
+    const result = JSON.parse((response.text ?? '').replace(/```json|```/g,'').trim());
     res.json(result);
   } catch(e: any) { res.status(500).json({ error: e.message }); }
 });

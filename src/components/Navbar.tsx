@@ -1,13 +1,13 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Heart, Search, User, Menu, X, LogOut, LayoutDashboard } from 'lucide-react';
+import { Home, Heart, Search, User, Menu, X, LogOut, LayoutDashboard, Users, Briefcase } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useFirebase } from '../context/SupabaseContext';
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = React.useState(false);
   const location = useLocation();
-  const { user, login, logout } = useFirebase();
+  const { user, login, logout, userRole } = useFirebase();
 
   const isAdmin = user?.email === "0420.lucas111@gmail.com";
 
@@ -25,12 +25,11 @@ export default function Navbar() {
   const navItems = [
     { label: '首頁', path: '/', icon: Home },
     { label: '找房', path: '/listings', icon: Search },
+    ...(isAdmin ? [{ label: '管理室', path: '/manage', icon: Users }] : []),
     { label: '收藏清單', path: '/favorites', icon: Heart },
+    ...(userRole === 'agent' ? [{ label: '管理後台', path: '/agent', icon: Briefcase }] : []),
+    ...(isAdmin ? [{ label: '管理後台', path: '/admin', icon: LayoutDashboard }] : []),
   ];
-
-  if (isAdmin) {
-    navItems.push({ label: '管理後台', path: '/admin', icon: LayoutDashboard });
-  }
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100">
@@ -67,9 +66,11 @@ export default function Navbar() {
             
             {user ? (
               <div className="flex items-center gap-4">
-                <Link to="/post" className="bg-gray-900 text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-gray-800 transition-colors">
-                  刊登房源
-                </Link>
+                {(userRole === 'agent' || userRole === 'admin') && (
+                  <Link to="/post" className="bg-gray-900 text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-gray-800 transition-colors">
+                    刊登房源
+                  </Link>
+                )}
                 <div className="flex items-center gap-3 pl-4 border-l border-gray-100">
                   <Link to="/profile" className="flex items-center gap-2 group">
                     <img src={user.photoURL || ''} alt={user.displayName || ''} className="w-8 h-8 rounded-full border border-gray-200 group-hover:border-orange-600 transition-colors" />
@@ -128,13 +129,15 @@ export default function Navbar() {
                 <User className="w-5 h-5" />
                 我的帳戶
               </Link>
-              <Link
-                to="/post"
-                onClick={() => setIsOpen(false)}
-                className="w-full bg-orange-600 text-white py-3 rounded-xl font-semibold flex items-center justify-center"
-              >
-                刊登房源
-              </Link>
+              {(userRole === 'agent' || userRole === 'admin') && (
+                <Link
+                  to="/post"
+                  onClick={() => setIsOpen(false)}
+                  className="w-full bg-orange-600 text-white py-3 rounded-xl font-semibold flex items-center justify-center"
+                >
+                  刊登房源
+                </Link>
+              )}
               <button 
                 onClick={() => { logout(); setIsOpen(false); }}
                 className="w-full flex items-center justify-center gap-2 text-gray-600 py-3 font-medium"

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { APIProvider, Map, AdvancedMarker, InfoWindow, useAdvancedMarkerRef, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
+import { APIProvider, Map, AdvancedMarker, InfoWindow, useAdvancedMarkerRef, useMap } from '@vis.gl/react-google-maps';
 import { Property } from '../types';
 import { Home, Navigation, Search, X } from 'lucide-react';
 
@@ -27,7 +27,7 @@ export default function MapComponent({ properties, onPropertyClick }: MapCompone
 
   return (
     <div className="w-full h-full rounded-[40px] overflow-hidden shadow-2xl border border-gray-100 relative">
-      <APIProvider apiKey={API_KEY} libraries={['places']}>
+      <APIProvider apiKey={API_KEY}>
         <MapInner properties={properties} onPropertyClick={onPropertyClick} />
       </APIProvider>
     </div>
@@ -38,25 +38,33 @@ function MapInner({ properties, onPropertyClick }: MapComponentProps) {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const map = useMap();
 
-  // Default center: Taipei
-  const defaultCenter = { lat: 25.0330, lng: 121.5654 };
+  // Auto-fit: single property → zoom 15 on it; multiple → fitBounds all markers
+  useEffect(() => {
+    if (!map || properties.length === 0) return;
+
+    if (properties.length === 1) {
+      const { lat, lng } = properties[0].location;
+      map.panTo({ lat, lng });
+      map.setZoom(15);
+    } else {
+      // filter out default Taipei coords that haven't been geocoded yet
+      const geocoded = properties.filter(
+        p => !(Math.abs(p.location.lat - 25.033) < 0.001 && Math.abs(p.location.lng - 121.5654) < 0.001)
+      );
+      const list = geocoded.length > 0 ? geocoded : properties;
+
+      const bounds = new google.maps.LatLngBounds();
+      list.forEach(p => bounds.extend({ lat: p.location.lat, lng: p.location.lng }));
+      map.fitBounds(bounds, 80);
+    }
+  }, [map, properties]);
 
   const handleLocateMe = () => {
     if (!map) return;
-    
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const pos = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          };
-          map.panTo(pos);
-          map.setZoom(15);
-        },
-        () => {
-          alert('無法取得您的位置。請確保已開啟定位權限。');
-        }
+        pos => { map.panTo({ lat: pos.coords.latitude, lng: pos.coords.longitude }); map.setZoom(15); },
+        () => alert('無法取得您的位置。請確保已開啟定位權限。')
       );
     } else {
       alert('您的瀏覽器不支援定位功能。');
@@ -66,20 +74,17 @@ function MapInner({ properties, onPropertyClick }: MapComponentProps) {
   return (
     <>
       <Map
-        defaultCenter={defaultCenter}
-        defaultZoom={13}
+        defaultCenter={{ lat: 23.9, lng: 121.0 }} // 台灣中心，fitBounds 後會覆蓋
+        defaultZoom={7}
         mapId="DEMO_MAP_ID"
-        gestureHandling={'greedy'}
+        gestureHandling="greedy"
         disableDefaultUI={false}
       >
-        {properties.map((property) => (
-          <PropertyMarker 
-            key={property.id} 
-            property={property} 
-            onClick={() => {
-              setSelectedProperty(property);
-              onPropertyClick?.(property);
-            }}
+        {properties.map(property => (
+          <PropertyMarker
+            key={property.id}
+            property={property}
+            onClick={() => { setSelectedProperty(property); onPropertyClick?.(property); }}
           />
         ))}
 
@@ -89,17 +94,17 @@ function MapInner({ properties, onPropertyClick }: MapComponentProps) {
             onCloseClick={() => setSelectedProperty(null)}
           >
             <div className="p-2 max-w-[200px]">
-              <img 
-                src={selectedProperty.images[0]} 
-                alt={selectedProperty.title} 
+              <img
+                src={selectedProperty.images[0]}
+                alt={selectedProperty.title}
                 className="w-full h-24 object-cover rounded-lg mb-2"
                 referrerPolicy="no-referrer"
               />
               <h3 className="font-bold text-sm mb-1 truncate">{selectedProperty.title}</h3>
               <p className="text-orange-600 font-bold text-sm">
-                ${selectedProperty.price.toLocaleString()} / 月
+                NT${selectedProperty.price.toLocaleString()} / 月
               </p>
-              <button 
+              <button
                 onClick={() => window.location.href = `/property/${selectedProperty.id}`}
                 className="mt-2 w-full py-1.5 bg-gray-900 text-white text-xs rounded-md font-bold"
               >
@@ -109,17 +114,17 @@ function MapInner({ properties, onPropertyClick }: MapComponentProps) {
           </InfoWindow>
         )}
       </Map>
-      
+
       {/* Search Bar */}
       <div className="absolute top-6 left-6 right-6 md:right-auto md:w-96 z-10">
-        <PlaceAutocomplete onPlaceSelect={(place) => {
-          if (!map || !place.geometry?.location) return;
-          map.panTo(place.geometry.location);
+        <GeoSearch onSearch={(lat, lng) => {
+          if (!map) return;
+          map.panTo({ lat, lng });
           map.setZoom(15);
         }} />
       </div>
 
-      {/* Custom Locate Me Button */}
+      {/* Locate Me */}
       <button
         onClick={handleLocateMe}
         className="absolute bottom-6 right-6 w-12 h-12 bg-white rounded-2xl shadow-xl flex items-center justify-center text-gray-700 hover:text-orange-600 transition-colors z-10 border border-gray-100"
@@ -131,30 +136,24 @@ function MapInner({ properties, onPropertyClick }: MapComponentProps) {
   );
 }
 
-interface PlaceAutocompleteProps {
-  onPlaceSelect: (place: google.maps.places.PlaceResult) => void;
-}
+function GeoSearch({ onSearch }: { onSearch: (lat: number, lng: number) => void }) {
+  const [value, setValue] = useState('');
+  const [searching, setSearching] = useState(false);
 
-function PlaceAutocomplete({ onPlaceSelect }: PlaceAutocompleteProps) {
-  const [inputValue, setInputValue] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-  const places = useMapsLibrary('places');
-
-  useEffect(() => {
-    if (!places || !inputRef.current) return;
-
-    const options = {
-      fields: ['geometry', 'name', 'formatted_address'],
-    };
-
-    const autocomplete = new places.Autocomplete(inputRef.current, options);
-
-    autocomplete.addListener('place_changed', () => {
-      const place = autocomplete.getPlace();
-      setInputValue(place.formatted_address || place.name || '');
-      onPlaceSelect(place);
-    });
-  }, [places, onPlaceSelect]);
+  const doSearch = async () => {
+    if (!value.trim()) return;
+    setSearching(true);
+    try {
+      const addr = encodeURIComponent(value);
+      const geo = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${addr}&key=${API_KEY}&language=zh-TW`
+      );
+      const json = await geo.json();
+      const loc = json.results?.[0]?.geometry?.location;
+      if (loc) onSearch(loc.lat, loc.lng);
+    } catch (_) {}
+    setSearching(false);
+  };
 
   return (
     <div className="relative group">
@@ -162,27 +161,33 @@ function PlaceAutocomplete({ onPlaceSelect }: PlaceAutocompleteProps) {
         <Search className="w-5 h-5 text-gray-400 group-focus-within:text-orange-600 transition-colors" />
       </div>
       <input
-        ref={inputRef}
         type="text"
-        value={inputValue}
-        onChange={(e) => setInputValue(e.target.value)}
-        placeholder="搜尋地點、捷運站或地址..."
-        className="w-full pl-12 pr-12 py-4 bg-white rounded-2xl shadow-2xl border border-gray-100 focus:outline-none focus:ring-2 focus:ring-orange-600/20 focus:border-orange-600 text-gray-900 font-medium placeholder:text-gray-400 transition-all"
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && doSearch()}
+        placeholder="搜尋地點、捷運站或地址... (Enter 搜尋)"
+        className="w-full pl-12 pr-20 py-4 bg-white rounded-2xl shadow-2xl border border-gray-100 focus:outline-none focus:ring-2 focus:ring-orange-600/20 focus:border-orange-600 text-gray-900 font-medium placeholder:text-gray-400 transition-all"
       />
-      {inputValue && (
+      <div className="absolute inset-y-0 right-3 flex items-center gap-1">
+        {value && (
+          <button onClick={() => setValue('')} className="text-gray-400 hover:text-gray-600 p-1">
+            <X className="w-4 h-4" />
+          </button>
+        )}
         <button
-          onClick={() => setInputValue('')}
-          className="absolute inset-y-0 right-4 flex items-center text-gray-400 hover:text-gray-600"
+          onClick={doSearch}
+          disabled={searching}
+          className="px-3 py-1.5 bg-orange-600 text-white rounded-xl text-xs font-bold hover:bg-orange-700 transition-colors disabled:opacity-50"
         >
-          <X className="w-5 h-5" />
+          {searching ? '...' : '搜尋'}
         </button>
-      )}
+      </div>
     </div>
   );
 }
 
 function PropertyMarker({ property, onClick }: { property: Property; onClick: () => void; key?: string }) {
-  const [markerRef, marker] = useAdvancedMarkerRef();
+  const [markerRef] = useAdvancedMarkerRef();
 
   return (
     <AdvancedMarker
@@ -197,7 +202,7 @@ function PropertyMarker({ property, onClick }: { property: Property; onClick: ()
             ${(property.price / 10000).toFixed(1)}萬
           </span>
         </div>
-        <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-orange-600 mx-auto -mt-0.5"></div>
+        <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-orange-600 mx-auto -mt-0.5" />
       </div>
     </AdvancedMarker>
   );

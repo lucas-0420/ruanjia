@@ -296,11 +296,13 @@ export default function AdminSync() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: idx * 0.05 }}
-                  className={`bg-white p-6 rounded-3xl shadow-sm border transition-all max-h-[400px] overflow-y-auto ${
+                  className={`bg-white rounded-3xl shadow-sm border transition-all flex flex-col ${
                     selected.has(msg.id) ? 'border-orange-400 bg-orange-50/30' :
                     msg.status === 'processed' ? 'border-gray-100 opacity-60' : 'border-gray-200 hover:border-orange-200'
                   }`}
                 >
+                  {/* 捲軸內容區 */}
+                  <div className="p-6 overflow-y-auto max-h-[360px]">
                   {/* Header */}
                   <div className="flex items-start justify-between gap-4 mb-4">
                     <div className="flex items-center gap-3">
@@ -372,10 +374,12 @@ export default function AdminSync() {
                     </div>
                   )}
 
-                  {/* 解析資訊 */}
+                  </div>{/* 捲軸結束 */}
+
+                  {/* 快速上架 — 固定在卡片底部 */}
                   {msg.parsedData && Object.keys(msg.parsedData).filter(k => k !== 'property_id').length > 0 && (
-                    <div className="border-t border-gray-100 pt-4 mt-4">
-                      <div className="flex items-center justify-between mb-4">
+                    <div className="px-6 pb-5 border-t border-gray-100 pt-4">
+                      <div className="flex items-center justify-between mb-3">
                         <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">提取資訊</span>
                         <button
                           onClick={() => handleQuickPost(msg)}
@@ -386,25 +390,25 @@ export default function AdminSync() {
                       </div>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                         {msg.parsedData.title && (
-                          <div className="bg-white p-3 rounded-xl border border-gray-100">
+                          <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                             <span className="block text-[10px] text-gray-400 uppercase mb-1">標題</span>
                             <span className="text-sm font-bold text-gray-900 line-clamp-1">{msg.parsedData.title}</span>
                           </div>
                         )}
                         {msg.parsedData.price && (
-                          <div className="bg-white p-3 rounded-xl border border-gray-100">
+                          <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                             <span className="block text-[10px] text-gray-400 uppercase mb-1">價格</span>
                             <span className="text-sm font-bold text-orange-600">${(msg.parsedData.price as number).toLocaleString()}</span>
                           </div>
                         )}
                         {msg.parsedData.city && (
-                          <div className="bg-white p-3 rounded-xl border border-gray-100">
+                          <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                             <span className="block text-[10px] text-gray-400 uppercase mb-1">地點</span>
                             <span className="text-sm font-bold text-gray-900">{msg.parsedData.city}{msg.parsedData.district}</span>
                           </div>
                         )}
                         {msg.parsedData.type && (
-                          <div className="bg-white p-3 rounded-xl border border-gray-100">
+                          <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                             <span className="block text-[10px] text-gray-400 uppercase mb-1">房型</span>
                             <span className="text-sm font-bold text-gray-900 uppercase">{msg.parsedData.type}</span>
                           </div>

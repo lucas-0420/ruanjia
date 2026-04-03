@@ -1,9 +1,24 @@
 import React from 'react';
-import { Search, MapPin, ArrowRight } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 export default function Hero() {
+  const navigate = useNavigate();
+  const [query, setQuery]         = React.useState('');
+  const [city, setCity]           = React.useState('台中市');
+  const [type, setType]           = React.useState('all');
+  const [priceRange, setPriceRange] = React.useState('all');
+
+  const handleSearch = () => {
+    const params = new URLSearchParams();
+    if (query.trim()) params.set('q', query.trim());
+    if (city !== 'all')       params.set('city', city);
+    if (type !== 'all')       params.set('type', type);
+    if (priceRange !== 'all') params.set('priceRange', priceRange);
+    navigate(`/listings?${params.toString()}`);
+  };
+
   return (
     <section className="relative pt-32 pb-20 overflow-hidden">
       {/* Background Accents */}
@@ -31,21 +46,38 @@ export default function Hero() {
 
             {/* Search Bar */}
             <div className="flex flex-col sm:flex-row gap-4 p-2 bg-white rounded-2xl shadow-xl shadow-gray-200/50 border border-gray-100 max-w-2xl">
-              <div className="flex-1 flex items-center gap-3 px-4 py-3">
-                <MapPin className="text-gray-400 w-5 h-5" />
+              <div className="flex-1 flex items-center">
+                {/* City Dropdown */}
+                <select
+                  value={city}
+                  onChange={e => setCity(e.target.value)}
+                  className="pl-4 pr-2 py-3 text-sm font-semibold text-gray-700 bg-transparent outline-none cursor-pointer border-r border-gray-200 shrink-0"
+                >
+                  <option value="all">全台</option>
+                  <option value="台北市">台北市</option>
+                  <option value="新北市">新北市</option>
+                  <option value="桃園市">桃園市</option>
+                  <option value="新竹市">新竹市</option>
+                  <option value="新竹縣">新竹縣</option>
+                  <option value="台中市">台中市</option>
+                </select>
+                {/* Keyword Input */}
                 <input
                   type="text"
-                  placeholder="你想住在哪裡？"
-                  className="w-full bg-transparent border-none focus:ring-0 text-gray-900 placeholder-gray-400"
+                  placeholder="輸入地址、社區名稱或關鍵字..."
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                  className="flex-1 px-4 py-3 bg-transparent border-none focus:ring-0 text-sm text-gray-900 placeholder-gray-400"
                 />
               </div>
-              <Link
-                to="/listings"
-                className="bg-gray-900 text-white px-8 py-3 rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-gray-800 transition-all group"
+              <button
+                onClick={handleSearch}
+                className="bg-orange-600 text-white px-8 py-3 rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-orange-700 transition-colors shrink-0"
               >
-                立即搜尋
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              </Link>
+                <Search className="w-4 h-4" />
+                搜尋
+              </button>
             </div>
 
             <div className="mt-8 flex items-center gap-6 text-sm text-gray-500">

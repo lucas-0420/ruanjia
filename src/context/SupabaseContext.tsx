@@ -11,6 +11,7 @@ interface User {
 
 interface SupabaseContextType {
   user: User | null;
+  userRole: string;
   loading: boolean;
   isAuthReady: boolean;
   properties: Property[];
@@ -25,6 +26,7 @@ const SupabaseContext = createContext<SupabaseContextType | undefined>(undefined
 
 export function SupabaseProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [userRole, setUserRole] = useState<string>('user');
   const [loading, setLoading] = useState(true);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [properties, setProperties] = useState<Property[]>([]);
@@ -40,22 +42,25 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
 
       if (authUser) {
         // Upsert user profile
+        const displayName = authUser.user_metadata?.full_name || authUser.user_metadata?.name || authUser.email?.split('@')[0] || '';
         await supabase.from('users').upsert({
           id: authUser.id,
           email: authUser.email,
-          display_name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || '',
+          display_name: displayName,
           photo_url: authUser.user_metadata?.avatar_url || '',
-        }, { onConflict: 'id' });
+        }, { onConflict: 'id', ignoreDuplicates: false });
 
-        // Fetch favorites
+        // Fetch role + favorites
         const { data } = await supabase
           .from('users')
-          .select('favorites')
+          .select('favorites, role')
           .eq('id', authUser.id)
           .single();
         setFavorites(data?.favorites || []);
+        setUserRole(data?.role || 'user');
       } else {
         setFavorites([]);
+        setUserRole('user');
       }
     });
     return unsubscribe;
@@ -67,6 +72,7 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await supabase
         .from('properties')
         .select('*')
+        .neq('status', 'archived')
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -148,7 +154,7 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => { try { await signOut(); } catch (e) { console.error('Logout error:', e); } };
 
   return (
-    <SupabaseContext.Provider value={{ user, loading, isAuthReady, properties, lineMessages, favorites, toggleFavorite, login, logout }}>
+    <SupabaseContext.Provider value={{ user, userRole, loading, isAuthReady, properties, lineMessages, favorites, toggleFavorite, login, logout }}>
       {children}
     </SupabaseContext.Provider>
   );
