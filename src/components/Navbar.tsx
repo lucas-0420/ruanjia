@@ -9,7 +9,7 @@ export default function Navbar() {
   const location = useLocation();
   const { user, login, logout, userRole } = useFirebase();
 
-  const isAdmin = user?.email === "0420.lucas111@gmail.com";
+  const isAdmin = userRole === 'admin';
 
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -73,7 +73,7 @@ export default function Navbar() {
                 )}
                 <div className="flex items-center gap-3 pl-4 border-l border-gray-100">
                   <Link to="/profile" className="flex items-center gap-2 group">
-                    <img src={user.photoURL || ''} alt={user.displayName || ''} className="w-8 h-8 rounded-full border border-gray-200 group-hover:border-orange-600 transition-colors" />
+                    <img src={user.user_metadata?.avatar_url || ''} alt={user.user_metadata?.full_name || ''} className="w-8 h-8 rounded-full border border-gray-200 group-hover:border-orange-600 transition-colors" />
                     <span className="text-sm font-medium text-gray-600 group-hover:text-orange-600 transition-colors hidden lg:block">我的帳戶</span>
                   </Link>
                   <button onClick={logout} className="text-gray-400 hover:text-orange-600 transition-colors ml-2">

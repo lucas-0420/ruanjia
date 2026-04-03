@@ -15,15 +15,13 @@ interface Message { id: string; senderId: string; senderName: string; propertyTi
 interface AppUser { id: string; email: string; displayName: string; photoUrl: string; role: string; createdAt: string; }
 
 type Tab = 'properties' | 'bookings' | 'messages' | 'users' | 'line';
-const ADMIN_EMAIL = '0420.lucas111@gmail.com';
-
 export default function AdminDashboard() {
-  const { user, properties, isAuthReady, logout } = useFirebase();
+  const { user, userRole, properties, isAuthReady, logout } = useFirebase();
   const [activeTab, setActiveTab] = useState<Tab>('properties');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
-  const isAdmin = user?.email === ADMIN_EMAIL;
+  const isAdmin = userRole === 'admin';
 
   useEffect(() => {
     if (!isAdmin) return;
