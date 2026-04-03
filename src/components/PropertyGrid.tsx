@@ -6,9 +6,10 @@ import { useFirebase } from '../context/SupabaseContext';
 
 interface PropertyGridProps {
   properties: Property[];
+  distanceMap?: Map<string, number>;
 }
 
-export default function PropertyGrid({ properties }: PropertyGridProps) {
+export default function PropertyGrid({ properties, distanceMap }: PropertyGridProps) {
   const { favorites, toggleFavorite } = useFirebase();
 
   return (
@@ -24,6 +25,7 @@ export default function PropertyGrid({ properties }: PropertyGridProps) {
             property={property}
             isFavorite={favorites.includes(property.id)}
             onToggleFavorite={toggleFavorite}
+            distance={distanceMap?.get(property.id)}
           />
         </motion.div>
       ))}

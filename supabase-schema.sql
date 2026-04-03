@@ -50,6 +50,7 @@ create table if not exists properties (
   owner_id uuid references users(id),
   owner_name text,
   owner_phone text,
+  owner_line_id text,
   owner_avatar text,
   owner_role text default '屋主',
   is_zero_fee boolean default true,

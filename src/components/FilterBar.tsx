@@ -14,6 +14,8 @@ export interface Filters {
   floor: string[];
   bathrooms: string[];
   equipment: string[];
+  distanceAddress: string;
+  maxDistance: string;
 }
 
 export const DEFAULT_FILTERS: Filters = {
@@ -28,6 +30,8 @@ export const DEFAULT_FILTERS: Filters = {
   floor: [],
   bathrooms: [],
   equipment: [],
+  distanceAddress: '',
+  maxDistance: '',
 };
 
 interface FilterBarProps {
@@ -398,6 +402,39 @@ export default function FilterBar({ onSearch, onFilterChange, initialSearch = ''
               selected={filters.equipment}
               onChange={v => update({ equipment: v })}
             />
+
+            {/* 距離篩選 */}
+            <div className="flex items-center gap-4 py-2.5">
+              <span className="text-sm font-medium text-gray-500 w-10 shrink-0">距離</span>
+              <input
+                type="text"
+                placeholder="輸入地址或地標（如：台中車站）"
+                value={filters.distanceAddress}
+                onChange={e => update({ distanceAddress: e.target.value })}
+                className="flex-1 max-w-xs px-3 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:border-orange-400"
+              />
+              <select
+                value={filters.maxDistance}
+                onChange={e => update({ maxDistance: e.target.value })}
+                className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:border-orange-400 bg-white"
+              >
+                <option value="">不限</option>
+                <option value="0.5">500m 內</option>
+                <option value="1">1km 內</option>
+                <option value="2">2km 內</option>
+                <option value="3">3km 內</option>
+                <option value="5">5km 內</option>
+                <option value="10">10km 內</option>
+              </select>
+              {filters.distanceAddress && (
+                <button
+                  onClick={() => update({ distanceAddress: '', maxDistance: '' })}
+                  className="text-xs text-red-400 hover:text-red-600"
+                >
+                  清除
+                </button>
+              )}
+            </div>
 
             <div className="pt-3 text-center">
               <button

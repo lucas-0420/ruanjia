@@ -8,9 +8,10 @@ interface PropertyCardProps {
   property: Property;
   isFavorite?: boolean;
   onToggleFavorite?: (id: string) => void;
+  distance?: number;
 }
 
-export default function PropertyCard({ property, isFavorite, onToggleFavorite }: PropertyCardProps) {
+export default function PropertyCard({ property, isFavorite, onToggleFavorite, distance }: PropertyCardProps) {
   return (
     <div className="group bg-white rounded-3xl overflow-hidden border border-gray-100 hover:shadow-2xl hover:shadow-gray-200/50 transition-all duration-500">
       {/* Image Container */}
@@ -66,11 +67,18 @@ export default function PropertyCard({ property, isFavorite, onToggleFavorite }:
         <div className="flex items-center gap-1.5 text-gray-400 text-xs font-medium mb-2">
           <MapPin className="w-3.5 h-3.5" />
           {property.location.city} {property.location.district}
-          {property.features.floor && (
-            <span className="ml-auto text-[10px] bg-gray-100 px-2 py-0.5 rounded text-gray-500">
-              {property.features.floor}{property.features.totalFloors ? `/${property.features.totalFloors}` : ''}F
-            </span>
-          )}
+          <div className="ml-auto flex items-center gap-1.5">
+            {distance !== undefined && (
+              <span className="text-[10px] bg-orange-50 text-orange-600 px-2 py-0.5 rounded font-bold">
+                {distance < 1 ? `${Math.round(distance * 1000)}m` : `${distance.toFixed(1)}km`}
+              </span>
+            )}
+            {property.features.floor && (
+              <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded text-gray-500">
+                {property.features.floor}{property.features.totalFloors ? `/${property.features.totalFloors}` : ''}F
+              </span>
+            )}
+          </div>
         </div>
         
         <h3 className="text-lg font-bold text-gray-900 mb-4 line-clamp-1 group-hover:text-orange-600 transition-colors">

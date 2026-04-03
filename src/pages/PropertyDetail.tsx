@@ -49,6 +49,8 @@ export default function PropertyDetail() {
                   avatar: ownerRow.photo_url || propData.owner.avatar || '',
                   role: ownerRow.role === 'agent' ? '仲介' : ownerRow.role === 'admin' ? '管理員' : '屋主',
                   uid: row.owner_id,
+                  phone: row.owner_phone || propData.owner.phone || '',
+                  lineId: row.owner_line_id || propData.owner.lineId || '',
                 };
               }
             } catch (_) {}
@@ -483,16 +485,45 @@ export default function PropertyDetail() {
                   <Calendar className="w-6 h-6" />
                   預約看房
                 </button>
-                <button className="w-full h-16 flex items-center justify-center gap-3 bg-[#06C755] text-white rounded-2xl font-bold hover:bg-[#05b34c] transition-all shadow-xl shadow-green-600/10">
-                  <div className="w-6 h-6 bg-white rounded-lg flex items-center justify-center text-[#06C755]">
-                    <span className="text-[12px] font-black">L</span>
-                  </div>
-                  LINE 聯繫屋主
-                </button>
-                <button className="w-full h-16 flex items-center justify-center gap-3 bg-gray-900 text-white rounded-2xl font-bold hover:bg-gray-800 transition-all shadow-xl shadow-gray-900/10">
-                  <Phone className="w-6 h-6" />
-                  致電屋主
-                </button>
+                {property.owner.lineId ? (
+                  <a
+                    href={`https://line.me/ti/p/~${property.owner.lineId.replace(/^@/, '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full h-16 flex items-center justify-center gap-3 bg-[#06C755] text-white rounded-2xl font-bold hover:bg-[#05b34c] transition-all shadow-xl shadow-green-600/10"
+                  >
+                    <div className="w-6 h-6 bg-white rounded-lg flex items-center justify-center text-[#06C755]">
+                      <span className="text-[12px] font-black">L</span>
+                    </div>
+                    LINE 聯繫屋主
+                  </a>
+                ) : property.owner.phone ? (
+                  <a
+                    href={`https://line.me/ti/p/+886${property.owner.phone.replace(/^0/, '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full h-16 flex items-center justify-center gap-3 bg-[#06C755] text-white rounded-2xl font-bold hover:bg-[#05b34c] transition-all shadow-xl shadow-green-600/10"
+                  >
+                    <div className="w-6 h-6 bg-white rounded-lg flex items-center justify-center text-[#06C755]">
+                      <span className="text-[12px] font-black">L</span>
+                    </div>
+                    LINE 聯繫屋主
+                  </a>
+                ) : null}
+                {property.owner.phone ? (
+                  <a
+                    href={`tel:${property.owner.phone}`}
+                    className="w-full h-16 flex items-center justify-center gap-3 bg-gray-900 text-white rounded-2xl font-bold hover:bg-gray-800 transition-all shadow-xl shadow-gray-900/10"
+                  >
+                    <Phone className="w-6 h-6" />
+                    致電屋主 {property.owner.phone}
+                  </a>
+                ) : (
+                  <button className="w-full h-16 flex items-center justify-center gap-3 bg-gray-900 text-white rounded-2xl font-bold hover:bg-gray-800 transition-all shadow-xl shadow-gray-900/10 opacity-50 cursor-not-allowed">
+                    <Phone className="w-6 h-6" />
+                    致電屋主
+                  </button>
+                )}
                 <button 
                   onClick={() => setShowMessageModal(true)}
                   className="w-full h-16 flex items-center justify-center gap-3 bg-orange-50 text-orange-600 rounded-2xl font-bold hover:bg-orange-100 transition-all"

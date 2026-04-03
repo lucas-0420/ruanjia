@@ -97,7 +97,9 @@ export default function PostProperty() {
     isZeroFee: true,
     tags: [] as string[],
     createdAt: '',
-    owner: null as any
+    owner: null as any,
+    ownerPhone: '',
+    ownerLineId: '',
   });
 
   useEffect(() => {
@@ -132,7 +134,9 @@ export default function PostProperty() {
               isZeroFee: d.isZeroFee ?? true,
               tags: d.tags || [],
               createdAt: d.createdAt || '',
-              owner: d.owner || null
+              owner: d.owner || null,
+              ownerPhone: d.owner?.phone || '',
+              ownerLineId: d.owner?.lineId || '',
             });
           }
         } catch (error) {
@@ -388,12 +392,13 @@ export default function PostProperty() {
         amenities: formData.amenities,
         images: formData.images.length > 0 ? formData.images : ['https://picsum.photos/seed/property/800/600'],
         description: formData.description,
-        owner: id && formData.owner ? formData.owner : {
-          name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '屋主',
-          phone: '',
-          avatar: user.user_metadata?.avatar_url || '',
+        owner: {
+          name: (id && formData.owner?.name) || user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '屋主',
+          phone: formData.ownerPhone,
+          lineId: formData.ownerLineId,
+          avatar: (id && formData.owner?.avatar) || user.user_metadata?.avatar_url || '',
           uid: user.id,
-          role: '屋主'
+          role: (id && formData.owner?.role) || '屋主'
         },
         isZeroFee: formData.isZeroFee,
         createdAt: id && formData.createdAt ? formData.createdAt : new Date().toISOString(),
@@ -993,6 +998,33 @@ export default function PostProperty() {
                           }
                         }}
                       />
+                    </div>
+                  </div>
+
+                  {/* 聯絡資訊 */}
+                  <div className="space-y-4">
+                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest">聯絡資訊</label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">聯絡電話</label>
+                        <input
+                          type="tel"
+                          placeholder="例如：0912345678"
+                          value={formData.ownerPhone}
+                          onChange={e => setFormData({ ...formData, ownerPhone: e.target.value })}
+                          className="w-full px-5 py-3.5 bg-gray-50 border-2 border-transparent rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">LINE ID</label>
+                        <input
+                          type="text"
+                          placeholder="例如：@renthome"
+                          value={formData.ownerLineId}
+                          onChange={e => setFormData({ ...formData, ownerLineId: e.target.value })}
+                          className="w-full px-5 py-3.5 bg-gray-50 border-2 border-transparent rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium"
+                        />
+                      </div>
                     </div>
                   </div>
 

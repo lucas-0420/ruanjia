@@ -2,7 +2,7 @@ import React from 'react';
 import FilterBar, { DEFAULT_FILTERS, Filters } from '../components/FilterBar';
 import PropertyGrid from '../components/PropertyGrid';
 import MapComponent from '../components/MapComponent';
-import { Map, LayoutGrid } from 'lucide-react';
+import { Map as MapIcon, LayoutGrid } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useFirebase } from '../context/SupabaseContext';
 import { useSearchParams } from 'react-router-dom';
@@ -49,6 +49,14 @@ function bathroomsMatch(baths: number, selected: string[]): boolean {
   return selected.some(r => r === '4+' ? baths >= 4 : baths === Number(r));
 }
 
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 export default function Listings() {
   const [searchParams] = useSearchParams();
   const initialQ = searchParams.get('q') || '';
@@ -58,7 +66,25 @@ export default function Listings() {
   const [viewMode, setViewMode] = React.useState<'grid' | 'map'>('grid');
   const [searchQuery, setSearchQuery] = React.useState(initialQ);
   const [filters, setFilters] = React.useState<Filters>({ ...DEFAULT_FILTERS, ...initialFilters });
+  const [distanceCenter, setDistanceCenter] = React.useState<{ lat: number; lng: number } | null>(null);
   const { properties, loading } = useFirebase();
+
+  // Geocode 距離篩選地址
+  React.useEffect(() => {
+    const addr = filters.distanceAddress.trim();
+    if (!addr) { setDistanceCenter(null); return; }
+    const apiKey = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(addr + ' 台灣')}&key=${apiKey}`);
+        const json = await res.json();
+        const loc = json.results?.[0]?.geometry?.location;
+        if (loc) setDistanceCenter({ lat: loc.lat, lng: loc.lng });
+      } catch (_) {}
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [filters.distanceAddress]);
 
   const filteredProperties = properties.filter(p => {
     const q = searchQuery.toLowerCase();
@@ -86,8 +112,22 @@ export default function Listings() {
       if (!filters.equipment.every(e => amenities.includes(e))) return false;
     }
 
+    if (distanceCenter && filters.maxDistance) {
+      const km = haversineKm(distanceCenter.lat, distanceCenter.lng, p.location.lat, p.location.lng);
+      if (km > Number(filters.maxDistance)) return false;
+    }
+
     return true;
   });
+
+  // 計算每個物件到距離篩選點的距離
+  const distanceMap = React.useMemo(() => {
+    if (!distanceCenter) return new Map<string, number>();
+    return new Map(filteredProperties.map(p => [
+      p.id,
+      haversineKm(distanceCenter.lat, distanceCenter.lng, p.location.lat, p.location.lng)
+    ]));
+  }, [distanceCenter, filteredProperties]);
 
   if (loading) {
     return (
@@ -132,14 +172,14 @@ export default function Listings() {
                 viewMode === 'map' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
               )}
             >
-              <Map className="w-4 h-4" />
+              <MapIcon className="w-4 h-4" />
               地圖
             </button>
           </div>
         </div>
 
         {viewMode === 'grid' ? (
-          <PropertyGrid properties={filteredProperties} />
+          <PropertyGrid properties={filteredProperties} distanceMap={distanceMap} />
         ) : (
           <div className="h-[700px] w-full">
             <MapComponent 

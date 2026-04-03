@@ -27,6 +27,8 @@ export interface Property {
     phone: string;
     avatar: string;
     role?: string;
+    lineId?: string;
+    uid?: string;
   };
   isZeroFee: boolean;
   createdAt: string;

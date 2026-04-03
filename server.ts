@@ -536,6 +536,18 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
+// Migration: Add owner_line_id column (run once)
+app.post('/api/admin/migrate', async (_req: any, res: any) => {
+  try {
+    // Test if column exists by selecting it
+    const { error: testErr } = await supabase.from('properties').select('owner_line_id').limit(1);
+    if (!testErr) return res.json({ ok: true, message: '欄位已存在，無需遷移' });
+    res.json({ ok: false, message: '請至 Supabase Dashboard > SQL Editor 執行：ALTER TABLE properties ADD COLUMN IF NOT EXISTS owner_line_id text;' });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
