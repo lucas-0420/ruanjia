@@ -16,6 +16,7 @@ export default function PostProperty() {
   const { user, userRole, login, isAuthReady } = useFirebase();
   const navigate = useNavigate();
   const { id } = useParams();
+  const isEditing = !!id;
   const location = useLocation();
 
   useEffect(() => {
@@ -525,7 +526,7 @@ export default function PostProperty() {
             </header>
 
             <form onSubmit={handleSubmit} className="space-y-10">
-              {(step === 1 || !!id) && (
+              {(step === 1 || isEditing) && (
                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div>
@@ -654,7 +655,7 @@ export default function PostProperty() {
                 </div>
               )}
 
-              {(step === 2 || !!id) && (
+              {(step === 2 || isEditing) && (
                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                   <div className="grid grid-cols-3 gap-6">
                     <div>
@@ -740,7 +741,7 @@ export default function PostProperty() {
                 </div>
               )}
 
-              {(step === 3 || !!id) && (
+              {(step === 3 || isEditing) && (
                 <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
                   <div>
                     <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-6">提供設施</label>
@@ -1055,7 +1056,7 @@ export default function PostProperty() {
               )}
 
               <div className="flex gap-4 pt-8">
-                {!id && step > 1 && (
+                {!isEditing && step > 1 && (
                   <button
                     type="button"
                     onClick={() => { setStep(step - 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
@@ -1064,7 +1065,7 @@ export default function PostProperty() {
                     上一步
                   </button>
                 )}
-                {!id && step < 3 ? (
+                {!isEditing && step < 3 ? (
                   <button
                     type="button"
                     onClick={() => {
