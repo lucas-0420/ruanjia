@@ -20,7 +20,7 @@ export default function Hero() {
   };
 
   return (
-    <section className="relative pt-32 pb-20 overflow-hidden">
+    <section className="relative pt-20 pb-10 sm:pt-32 sm:pb-20 overflow-hidden">
       {/* Background Accents */}
       <div className="absolute top-0 right-0 -z-10 w-1/2 h-full bg-orange-50/50 rounded-bl-[200px]" />
       <div className="absolute top-40 left-10 -z-10 w-64 h-64 bg-blue-50/50 rounded-full blur-3xl" />
@@ -32,14 +32,14 @@ export default function Hero() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
           >
-            <span className="inline-block px-4 py-1.5 mb-6 text-sm font-semibold tracking-wide text-orange-600 uppercase bg-orange-50 rounded-full">
+            <span className="inline-block px-4 py-1.5 mb-4 sm:mb-6 text-xs sm:text-sm font-semibold tracking-wide text-orange-600 uppercase bg-orange-50 rounded-full">
               AI 驅動的租屋平台
             </span>
-            <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-gray-900 leading-[1.1] mb-6">
+            <h1 className="text-4xl sm:text-6xl md:text-7xl font-bold tracking-tight text-gray-900 leading-[1.1] mb-4 sm:mb-6">
               用 AI 找到 <br />
               <span className="text-orange-600">理想的家</span>
             </h1>
-            <p className="text-lg text-gray-600 mb-10 max-w-xl leading-relaxed">
+            <p className="text-base sm:text-lg text-gray-600 mb-6 sm:mb-10 max-w-xl leading-relaxed">
               租家讓你直接聯繫屋主。無負擔、更輕鬆。
               我們的 AI 助手能根據你的生活圈，為你推薦最合適的房源。
             </p>
@@ -80,7 +80,7 @@ export default function Hero() {
               </button>
             </div>
 
-            <div className="mt-8 flex items-center gap-6 text-sm text-gray-500">
+            <div className="mt-5 sm:mt-8 flex items-center gap-4 sm:gap-6 text-xs sm:text-sm text-gray-500">
               <div className="flex -space-x-2">
                 {[1, 2, 3, 4].map((i) => (
                   <img

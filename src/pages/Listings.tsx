@@ -147,38 +147,38 @@ export default function Listings() {
     <div className="min-h-screen bg-white pt-16">
       <FilterBar onSearch={setSearchQuery} onFilterChange={setFilters} initialSearch={initialQ} initialFilters={{ ...DEFAULT_FILTERS, ...initialFilters }} />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
+        <div className="flex items-center justify-between gap-4 mb-4 sm:mb-8">
           <div>
-            <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">
+            <h1 className="text-2xl sm:text-4xl font-bold text-gray-900 mb-0.5 sm:mb-2">
               所有房源
             </h1>
-            <p className="text-gray-500 font-medium">
-              目前共有 {filteredProperties.length} 間房源可供選擇
+            <p className="text-gray-500 text-sm sm:text-base font-medium">
+              共 {filteredProperties.length} 間可選擇
             </p>
           </div>
 
           {/* View Toggle */}
-          <div className="flex items-center gap-2 p-1.5 bg-gray-100 rounded-2xl self-start">
+          <div className="flex items-center gap-1.5 p-1 sm:p-1.5 bg-gray-100 rounded-xl sm:rounded-2xl shrink-0">
             <button
               onClick={() => setViewMode('grid')}
               className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all",
+                "flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all",
                 viewMode === 'grid' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
               )}
             >
-              <LayoutGrid className="w-4 h-4" />
+              <LayoutGrid className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               列表
             </button>
             <button
               onClick={() => setViewMode('map')}
               className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all",
+                "flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all",
                 viewMode === 'map' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
               )}
             >
-              <MapIcon className="w-4 h-4" />
+              <MapIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               地圖
             </button>
           </div>

@@ -228,7 +228,7 @@ export default function FilterBar({ onSearch, onFilterChange, initialSearch = ''
               value={searchValue}
               onChange={e => { setSearchValue(e.target.value); onSearch(e.target.value); }}
               onKeyDown={e => e.key === 'Enter' && onSearch(searchValue)}
-              className="w-44 px-4 py-2 text-sm text-gray-900 placeholder-gray-400 bg-transparent outline-none"
+              className="w-28 sm:w-44 px-3 sm:px-4 py-2 text-sm text-gray-900 placeholder-gray-400 bg-transparent outline-none"
             />
             <button
               onClick={() => onSearch(searchValue)}
