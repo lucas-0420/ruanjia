@@ -1,1 +1,56 @@
 @import "tailwindcss";
+
+/* ─────────────────────────────────────────
+   暖家 品牌色彩系統
+   主色：暖黃 #F5A623
+   輔色：米白 #FFF8F0、暖棕 #8B5E3C
+   背景：奶油白
+   文字：深棕 #3D2B1F
+───────────────────────────────────────── */
+@theme {
+  /* 橙色系 → 暖黃色系 */
+  --color-orange-50:  #FFF8F0;
+  --color-orange-100: #FFE8CC;
+  --color-orange-200: #FFD4A3;
+  --color-orange-300: #FFC270;
+  --color-orange-400: #FFB830;
+  --color-orange-500: #F5A623;
+  --color-orange-600: #F5A623;
+  --color-orange-700: #D4891A;
+  --color-orange-800: #B8730F;
+  --color-orange-900: #8B5209;
+
+  /* 灰色系 → 暖棕色系 */
+  --color-gray-50:  #FBF7F3;
+  --color-gray-100: #F2E9DF;
+  --color-gray-200: #E5D5C5;
+  --color-gray-300: #D4BDA8;
+  --color-gray-400: #B8A090;
+  --color-gray-500: #9A7D6B;
+  --color-gray-600: #7A5C48;
+  --color-gray-700: #5C3D28;
+  --color-gray-800: #4A2E1A;
+  --color-gray-900: #3D2B1F;
+
+  /* 綠色系 → 保留用於狀態（上架、確認） */
+  --color-green-50:  #F0FAF4;
+  --color-green-100: #D6F5E3;
+  --color-green-600: #2E9E5A;
+  --color-green-700: #227A44;
+
+  /* 紅色系 → 保留用於狀態（取消、刪除） */
+  --color-red-50:  #FEF2F2;
+  --color-red-400: #F87171;
+  --color-red-500: #EF4444;
+  --color-red-600: #DC2626;
+}
+
+/* 全域背景與文字色 */
+html, body {
+  background-color: #FBF7F3;
+  color: #3D2B1F;
+}
+
+/* 隱藏滾動條但保留滾動功能 */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

@@ -1,133 +1,149 @@
 import React from 'react';
-import { Search } from 'lucide-react';
+import { Search, MapPin, Home } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 
 export default function Hero() {
   const navigate = useNavigate();
-  const [query, setQuery]         = React.useState('');
-  const [city, setCity]           = React.useState('台中市');
-  const [type, setType]           = React.useState('all');
-  const [priceRange, setPriceRange] = React.useState('all');
+  const [query, setQuery]       = React.useState('');
+  const [city, setCity]         = React.useState('台中市');
 
   const handleSearch = () => {
     const params = new URLSearchParams();
     if (query.trim()) params.set('q', query.trim());
-    if (city !== 'all')       params.set('city', city);
-    if (type !== 'all')       params.set('type', type);
-    if (priceRange !== 'all') params.set('priceRange', priceRange);
+    if (city !== 'all') params.set('city', city);
     navigate(`/listings?${params.toString()}`);
   };
 
   return (
-    <section className="relative pt-20 pb-10 sm:pt-32 sm:pb-20 overflow-hidden">
-      {/* Background Accents */}
-      <div className="absolute top-0 right-0 -z-10 w-1/2 h-full bg-orange-50/50 rounded-bl-[200px]" />
-      <div className="absolute top-40 left-10 -z-10 w-64 h-64 bg-blue-50/50 rounded-full blur-3xl" />
+    <section className="relative pt-20 pb-12 sm:pt-28 sm:pb-20 overflow-hidden bg-[#FFF8F0]">
+      {/* 背景裝飾 */}
+      <div className="absolute top-0 right-0 -z-10 w-2/3 h-full bg-gradient-to-bl from-[#FFE8CC]/60 to-transparent rounded-bl-[120px]" />
+      <div className="absolute bottom-0 left-0 -z-10 w-48 h-48 bg-[#FFD4A3]/30 rounded-full blur-3xl" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid lg:grid-cols-[1.2fr_1fr] gap-12 items-center">
+        <div className="grid lg:grid-cols-[1.1fr_1fr] gap-10 items-center">
+
+          {/* Left — Copy */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
           >
-            <span className="inline-block px-4 py-1.5 mb-4 sm:mb-6 text-xs sm:text-sm font-semibold tracking-wide text-orange-600 uppercase bg-orange-50 rounded-full">
-              AI 驅動的租屋平台
-            </span>
-            <h1 className="text-4xl sm:text-6xl md:text-7xl font-bold tracking-tight text-gray-900 leading-[1.1] mb-4 sm:mb-6">
-              用 AI 找到 <br />
-              <span className="text-orange-600">理想的家</span>
+            {/* 品牌標語 */}
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-5 bg-[#FFE8CC] rounded-full">
+              <Home className="w-3.5 h-3.5 text-[#F5A623]" />
+              <span className="text-xs sm:text-sm font-semibold text-[#8B5E3C] tracking-wide">找到屬於你的溫暖角落</span>
+            </div>
+
+            <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-[#3D2B1F] leading-[1.15] mb-4 sm:mb-6">
+              讓找房<br />
+              <span className="text-[#F5A623]">像回家一樣</span><br />
+              自在
             </h1>
-            <p className="text-base sm:text-lg text-gray-600 mb-6 sm:mb-10 max-w-xl leading-relaxed">
-              租家讓你直接聯繫屋主。無負擔、更輕鬆。
-              我們的 AI 助手能根據你的生活圈，為你推薦最合適的房源。
+
+            <p className="text-[#7A5C48] text-base sm:text-lg leading-relaxed mb-7 sm:mb-10 max-w-md">
+              暖家直接連結房東與租客，省去仲介費用。
+              用溫度找到真正適合你的家。
             </p>
 
-            {/* Search Bar */}
-            <div className="flex flex-col sm:flex-row gap-4 p-2 bg-white rounded-2xl shadow-xl shadow-gray-200/50 border border-gray-100 max-w-2xl">
-              <div className="flex-1 flex items-center">
-                {/* City Dropdown */}
-                <select
-                  value={city}
-                  onChange={e => setCity(e.target.value)}
-                  className="pl-4 pr-2 py-3 text-sm font-semibold text-gray-700 bg-transparent outline-none cursor-pointer border-r border-gray-200 shrink-0"
-                >
-                  <option value="all">全台</option>
-                  <option value="台北市">台北市</option>
-                  <option value="新北市">新北市</option>
-                  <option value="桃園市">桃園市</option>
-                  <option value="新竹市">新竹市</option>
-                  <option value="新竹縣">新竹縣</option>
-                  <option value="台中市">台中市</option>
-                </select>
-                {/* Keyword Input */}
+            {/* 搜尋框 */}
+            <div className="bg-white rounded-2xl sm:rounded-3xl shadow-lg shadow-[#F5A623]/10 border border-[#E5D5C5] p-2 max-w-xl">
+              <div className="flex items-center gap-2">
+                {/* 城市選擇 */}
+                <div className="flex items-center gap-1 pl-2 shrink-0">
+                  <MapPin className="w-4 h-4 text-[#F5A623]" />
+                  <select
+                    value={city}
+                    onChange={e => setCity(e.target.value)}
+                    className="text-sm font-semibold text-[#3D2B1F] bg-transparent outline-none cursor-pointer pr-1"
+                  >
+                    <option value="all">全台</option>
+                    <option value="台北市">台北市</option>
+                    <option value="新北市">新北市</option>
+                    <option value="桃園市">桃園市</option>
+                    <option value="新竹市">新竹市</option>
+                    <option value="新竹縣">新竹縣</option>
+                    <option value="台中市">台中市</option>
+                  </select>
+                </div>
+                <div className="w-px h-5 bg-[#E5D5C5]" />
+                {/* 關鍵字 */}
                 <input
                   type="text"
-                  placeholder="輸入地址、社區名稱或關鍵字..."
+                  placeholder="輸入地址、社區或關鍵字..."
                   value={query}
                   onChange={e => setQuery(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleSearch()}
-                  className="flex-1 px-4 py-3 bg-transparent border-none focus:ring-0 text-sm text-gray-900 placeholder-gray-400"
+                  className="flex-1 px-3 py-2.5 text-sm text-[#3D2B1F] placeholder-[#B8A090] bg-transparent outline-none"
                 />
+                <button
+                  onClick={handleSearch}
+                  className="bg-[#F5A623] hover:bg-[#FFB830] text-[#3D2B1F] px-5 py-2.5 rounded-xl sm:rounded-2xl font-bold text-sm flex items-center gap-1.5 transition-colors shrink-0 shadow-sm"
+                >
+                  <Search className="w-4 h-4" />
+                  <span className="hidden sm:inline">搜尋</span>
+                </button>
               </div>
-              <button
-                onClick={handleSearch}
-                className="bg-orange-600 text-white px-8 py-3 rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-orange-700 transition-colors shrink-0"
-              >
-                <Search className="w-4 h-4" />
-                搜尋
-              </button>
             </div>
 
-            <div className="mt-5 sm:mt-8 flex items-center gap-4 sm:gap-6 text-xs sm:text-sm text-gray-500">
+            {/* 社會證明 */}
+            <div className="mt-6 flex items-center gap-4 text-xs sm:text-sm text-[#9A7D6B]">
               <div className="flex -space-x-2">
-                {[1, 2, 3, 4].map((i) => (
+                {[1, 2, 3, 4].map(i => (
                   <img
                     key={i}
                     src={`https://picsum.photos/seed/user${i}/100/100`}
-                    className="w-8 h-8 rounded-full border-2 border-white"
+                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border-2 border-[#FFF8F0]"
                     alt="User"
                     referrerPolicy="no-referrer"
                   />
                 ))}
               </div>
-              <p>已有 10,000+ 用戶在此找到理想租屋</p>
+              <p>已有 <strong className="text-[#3D2B1F]">10,000+</strong> 人在暖家找到溫暖的家</p>
             </div>
           </motion.div>
 
+          {/* Right — 圖片（桌面才顯示） */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
+            initial={{ opacity: 0, scale: 0.93 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.8, delay: 0.2 }}
             className="relative hidden lg:block"
           >
-            <div className="relative rounded-3xl overflow-hidden shadow-2xl">
+            <div className="relative rounded-3xl overflow-hidden shadow-2xl shadow-[#F5A623]/15">
               <img
-                src="https://picsum.photos/seed/modern-house/1200/1600"
-                alt="Modern House"
+                src="https://picsum.photos/seed/warm-home/900/1100"
+                alt="溫馨的家"
                 className="w-full aspect-[3/4] object-cover"
                 referrerPolicy="no-referrer"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#3D2B1F]/30 to-transparent" />
             </div>
-            
-            {/* Floating Card */}
-            <div className="absolute -bottom-6 -left-6 bg-white p-6 rounded-2xl shadow-xl border border-gray-100 max-w-[240px]">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                  <span className="text-green-600 font-bold">$</span>
+
+            {/* 浮動資訊卡 */}
+            <div className="absolute -bottom-4 -left-6 bg-white rounded-2xl shadow-xl border border-[#E5D5C5] p-5 max-w-[220px]">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-9 h-9 bg-[#FFE8CC] rounded-xl flex items-center justify-center">
+                  <span className="text-[#F5A623] font-bold text-base">零</span>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">屋主直租</p>
-                  <p className="text-sm font-bold text-gray-900">無仲介費</p>
+                  <p className="text-[9px] text-[#9A7D6B] font-bold uppercase tracking-wider">屋主直租</p>
+                  <p className="text-sm font-bold text-[#3D2B1F]">無仲介費</p>
                 </div>
               </div>
-              <p className="text-xs text-gray-600 leading-relaxed">
-                直接聯繫房東，省下高額仲介服務費。
+              <p className="text-xs text-[#7A5C48] leading-relaxed">
+                直接聯繫房東，省下高額服務費。
               </p>
             </div>
+
+            {/* 另一個浮動標籤 */}
+            <div className="absolute top-6 -right-4 bg-[#F5A623] text-[#3D2B1F] rounded-2xl shadow-lg px-4 py-3">
+              <p className="text-xs font-bold">🏡 溫馨房源</p>
+              <p className="text-lg font-black">500+</p>
+            </div>
           </motion.div>
+
         </div>
       </div>
     </section>

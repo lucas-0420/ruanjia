@@ -32,61 +32,69 @@ export default function Navbar() {
   ];
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100">
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-[#FFF8F0]/90 backdrop-blur-md border-b border-[#E5D5C5]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
+
           {/* Logo */}
-          <Link 
-            to="/" 
+          <Link
+            to="/"
             onClick={() => handleLinkClick('/')}
-            className="flex items-center gap-2"
+            className="flex items-center gap-2.5"
           >
-            <div className="w-8 h-8 bg-orange-600 rounded-lg flex items-center justify-center">
-              <Home className="text-white w-5 h-5" />
+            <div className="w-8 h-8 bg-[#F5A623] rounded-xl flex items-center justify-center shadow-sm">
+              <Home className="text-white w-4 h-4" />
             </div>
-            <span className="text-xl font-bold tracking-tight text-gray-900">租家</span>
+            <span className="text-xl font-bold tracking-tight text-[#3D2B1F]">暖家</span>
           </Link>
 
           {/* Desktop Nav */}
-          <div className="hidden md:flex items-center gap-8">
+          <div className="hidden md:flex items-center gap-7">
             {navItems.map((item) => (
               <Link
                 key={item.path}
                 to={item.path}
                 onClick={() => handleLinkClick(item.path)}
                 className={cn(
-                  "text-sm font-medium transition-colors hover:text-orange-600 flex items-center gap-2",
-                  location.pathname === item.path ? "text-orange-600" : "text-gray-600"
+                  "text-sm font-medium transition-colors hover:text-[#F5A623] flex items-center gap-1.5",
+                  location.pathname === item.path ? "text-[#F5A623]" : "text-[#7A5C48]"
                 )}
               >
                 <item.icon className="w-4 h-4" />
                 {item.label}
               </Link>
             ))}
-            
+
             {user ? (
               <div className="flex items-center gap-4">
                 {(userRole === 'agent' || userRole === 'admin') && (
-                  <Link to="/post" className="bg-gray-900 text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-gray-800 transition-colors">
+                  <Link
+                    to="/post"
+                    className="bg-[#F5A623] text-[#3D2B1F] px-4 py-2 rounded-full text-sm font-bold hover:bg-[#FFB830] transition-colors shadow-sm"
+                  >
                     刊登房源
                   </Link>
                 )}
-                <div className="flex items-center gap-3 pl-4 border-l border-gray-100">
+                <div className="flex items-center gap-3 pl-4 border-l border-[#E5D5C5]">
                   <Link to="/profile" className="flex items-center gap-2 group">
-                    <img src={user.user_metadata?.avatar_url || ''} alt={user.user_metadata?.full_name || ''} className="w-8 h-8 rounded-full border border-gray-200 group-hover:border-orange-600 transition-colors" />
-                    <span className="text-sm font-medium text-gray-600 group-hover:text-orange-600 transition-colors hidden lg:block">我的帳戶</span>
+                    <img
+                      src={user.user_metadata?.avatar_url || ''}
+                      alt={user.user_metadata?.full_name || ''}
+                      className="w-8 h-8 rounded-full border-2 border-[#E5D5C5] group-hover:border-[#F5A623] transition-colors"
+                    />
+                    <span className="text-sm font-medium text-[#7A5C48] group-hover:text-[#F5A623] transition-colors hidden lg:block">我的帳戶</span>
                   </Link>
-                  <button onClick={logout} className="text-gray-400 hover:text-orange-600 transition-colors ml-2">
-                    <LogOut className="w-5 h-5" />
+                  <button onClick={logout} className="text-[#B8A090] hover:text-[#F5A623] transition-colors ml-1">
+                    <LogOut className="w-4 h-4" />
                   </button>
                 </div>
               </div>
             ) : (
-              <button 
+              <button
                 onClick={login}
-                className="flex items-center gap-2 text-gray-600 hover:text-orange-600 font-medium text-sm transition-colors"
+                className="flex items-center gap-2 bg-[#F5A623] text-[#3D2B1F] px-4 py-2 rounded-full text-sm font-bold hover:bg-[#FFB830] transition-colors shadow-sm"
               >
-                <User className="w-4 h-4" />
+                <User className="w-3.5 h-3.5" />
                 登入 / 註冊
               </button>
             )}
@@ -94,8 +102,11 @@ export default function Navbar() {
 
           {/* Mobile Menu Button */}
           <div className="md:hidden">
-            <button onClick={() => setIsOpen(!isOpen)} className="text-gray-600 p-2">
-              {isOpen ? <X /> : <Menu />}
+            <button
+              onClick={() => setIsOpen(!isOpen)}
+              className="text-[#7A5C48] p-2 hover:text-[#F5A623] transition-colors"
+            >
+              {isOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
           </div>
         </div>
@@ -103,58 +114,62 @@ export default function Navbar() {
 
       {/* Mobile Nav */}
       {isOpen && (
-        <div className="md:hidden bg-white border-b border-gray-100 py-4 px-4 space-y-4">
+        <div className="md:hidden bg-[#FFF8F0] border-t border-[#E5D5C5] py-4 px-4 space-y-1">
           {navItems.map((item) => (
             <Link
               key={item.path}
               to={item.path}
               onClick={() => handleLinkClick(item.path)}
               className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-lg text-base font-medium",
-                location.pathname === item.path ? "bg-orange-50 text-orange-600" : "text-gray-600 hover:bg-gray-50"
+                "flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium transition-colors",
+                location.pathname === item.path
+                  ? "bg-[#FFE8CC] text-[#F5A623]"
+                  : "text-[#7A5C48] hover:bg-[#F2E9DF]"
               )}
             >
-              <item.icon className="w-5 h-5" />
+              <item.icon className="w-4 h-4" />
               {item.label}
             </Link>
           ))}
-          
-          {user ? (
-            <div className="space-y-4">
-              <Link
-                to="/profile"
-                onClick={() => setIsOpen(false)}
-                className="w-full bg-gray-50 text-gray-900 py-3 rounded-xl font-semibold flex items-center justify-center gap-2"
-              >
-                <User className="w-5 h-5" />
-                我的帳戶
-              </Link>
-              {(userRole === 'agent' || userRole === 'admin') && (
+
+          <div className="pt-2 border-t border-[#E5D5C5] mt-2 space-y-2">
+            {user ? (
+              <>
                 <Link
-                  to="/post"
+                  to="/profile"
                   onClick={() => setIsOpen(false)}
-                  className="w-full bg-orange-600 text-white py-3 rounded-xl font-semibold flex items-center justify-center"
+                  className="w-full bg-[#F2E9DF] text-[#3D2B1F] py-3 rounded-2xl font-semibold flex items-center justify-center gap-2 text-sm"
                 >
-                  刊登房源
+                  <User className="w-4 h-4" />
+                  我的帳戶
                 </Link>
-              )}
-              <button 
-                onClick={() => { logout(); setIsOpen(false); }}
-                className="w-full flex items-center justify-center gap-2 text-gray-600 py-3 font-medium"
+                {(userRole === 'agent' || userRole === 'admin') && (
+                  <Link
+                    to="/post"
+                    onClick={() => setIsOpen(false)}
+                    className="w-full bg-[#F5A623] text-[#3D2B1F] py-3 rounded-2xl font-bold flex items-center justify-center text-sm"
+                  >
+                    刊登房源
+                  </Link>
+                )}
+                <button
+                  onClick={() => { logout(); setIsOpen(false); }}
+                  className="w-full flex items-center justify-center gap-2 text-[#9A7D6B] py-3 text-sm font-medium"
+                >
+                  <LogOut className="w-4 h-4" />
+                  登出
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => { login(); setIsOpen(false); }}
+                className="w-full bg-[#F5A623] text-[#3D2B1F] py-3 rounded-2xl font-bold flex items-center justify-center gap-2 text-sm"
               >
-                <LogOut className="w-5 h-5" />
-                登出
+                <User className="w-4 h-4" />
+                登入 / 註冊
               </button>
-            </div>
-          ) : (
-            <button 
-              onClick={() => { login(); setIsOpen(false); }}
-              className="w-full bg-orange-600 text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2"
-            >
-              <User className="w-5 h-5" />
-              登入 / 註冊
-            </button>
-          )}
+            )}
+          </div>
         </div>
       )}
     </nav>
