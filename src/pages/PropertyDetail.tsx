@@ -295,8 +295,8 @@ export default function PropertyDetail() {
             </div>
           </div>
 
-          {/* ── 2. 右欄：mobile order-2（無sticky），desktop col-2 row-span-2 ── */}
-          <div className="order-2 lg:row-span-2">
+          {/* ── 2. 右欄：mobile order-2，desktop col-2 row-span-2，自身撐滿 grid area ── */}
+          <div className="order-2 lg:row-span-2 lg:self-stretch">
 
             {/* 價格/規格/詳細資訊：desktop 固定不動 */}
             <div className="lg:sticky lg:top-24 flex flex-col gap-5 lg:mb-6">
