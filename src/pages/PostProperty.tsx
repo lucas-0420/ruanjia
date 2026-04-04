@@ -413,8 +413,19 @@ export default function PostProperty() {
 
       const trySave = async (data: any) => {
         if (id) {
-          const { error } = await supabase.from('properties').update(data).eq('id', id);
-          return error;
+          // 走 server API（service role key，繞過 RLS），支援 owner 及 admin 編輯
+          const session = await supabase.auth.getSession();
+          const token = session.data.session?.access_token;
+          const res = await fetch(`/api/properties/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify(data),
+          });
+          if (!res.ok) {
+            const json = await res.json().catch(() => ({}));
+            return { message: json.error || '更新失敗', code: String(res.status) } as any;
+          }
+          return null;
         } else {
           const { error } = await supabase.from('properties').insert({ ...data, owner_id: user.id });
           return error;
@@ -422,7 +433,7 @@ export default function PostProperty() {
       };
 
       let error = await trySave(dbData);
-      // 若因 owner_line_id 欄位不存在而失敗，移除後重試
+      // 若因 owner_line_id 欄位不存在而失敗，移除後重試（僅新增時適用）
       if (error && (error.message?.includes('owner_line_id') || error.code === '42703')) {
         const { owner_line_id, ...dataWithoutLineId } = dbData as any;
         error = await trySave(dataWithoutLineId);

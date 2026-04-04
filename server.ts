@@ -494,6 +494,41 @@ app.get('/api/users/:id', async (req, res) => {
   res.json(data);
 });
 
+// 通用屬性更新：owner 或 admin 皆可，用 service key 繞過 RLS
+app.put('/api/properties/:id', async (req: any, res: any) => {
+  const token = req.headers['authorization']?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: '未授權' });
+
+  let userId: string;
+  let userEmail: string;
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return res.status(401).json({ error: 'Token 無效' });
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    userId = payload.sub;
+    userEmail = payload.email || '';
+    if (!userId) return res.status(401).json({ error: 'Token 無效' });
+  } catch {
+    return res.status(401).json({ error: 'Token 無效' });
+  }
+
+  const { id } = req.params;
+
+  // 檢查是否為 owner 或 admin
+  const { data: prop } = await supabase.from('properties').select('owner_id').eq('id', id).single();
+  if (!prop) return res.status(404).json({ error: '找不到物件' });
+
+  const isAdmin = userEmail === ADMIN_EMAIL ||
+    (await supabase.from('users').select('role').eq('id', userId).single()).data?.role === 'admin';
+  const isOwner = prop.owner_id === userId;
+
+  if (!isAdmin && !isOwner) return res.status(403).json({ error: '無權限修改此物件' });
+
+  const { error } = await supabase.from('properties').update(req.body).eq('id', id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
 app.patch('/api/admin/users/:id/role', requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { role } = req.body;
