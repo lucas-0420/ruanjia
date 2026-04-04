@@ -27,8 +27,8 @@ export default function Navbar() {
     { label: '找房', path: '/listings', icon: Search },
     ...(isAdmin ? [{ label: '管理室', path: '/manage', icon: Users }] : []),
     { label: '收藏清單', path: '/favorites', icon: Heart },
-    ...(userRole === 'agent' ? [{ label: '管理後台', path: '/agent', icon: Briefcase }] : []),
-    ...(isAdmin ? [{ label: '管理後台', path: '/admin', icon: LayoutDashboard }] : []),
+    ...(userRole === 'agent' ? [{ label: '會員中心', path: '/agent', icon: Briefcase }] : []),
+    ...(isAdmin ? [{ label: '會員中心', path: '/admin', icon: LayoutDashboard }] : []),
   ];
 
   return (
