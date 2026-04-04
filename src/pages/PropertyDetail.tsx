@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   Bed, Bath, Maximize, MapPin, Heart,
@@ -29,6 +29,12 @@ export default function PropertyDetail() {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [showMapModal, setShowMapModal] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+
+  // 右欄 sticky refs：用來讓屋主卡片隨頁滾動
+  const rightColRef = useRef<HTMLDivElement>(null);
+  const infoRef = useRef<HTMLDivElement>(null);
+  const ownerCardRef = useRef<HTMLDivElement>(null);
+  const rightColDocTopRef = useRef(0); // 右欄自然位置（document top）
 
   useEffect(() => {
     async function fetchProperty() {
@@ -185,6 +191,34 @@ export default function PropertyDetail() {
     return () => window.removeEventListener('keydown', handler);
   }, [lightboxIndex, property]);
 
+  // 記錄右欄在 document 中的自然頂部位置（property 載入後才有 DOM）
+  useEffect(() => {
+    if (!property || !rightColRef.current) return;
+    rightColDocTopRef.current = rightColRef.current.getBoundingClientRect().top + window.scrollY;
+  }, [property]);
+
+  // 屋主卡片隨頁滾動：sticky 後用 translateY 模擬自然捲動
+  useEffect(() => {
+    const STICKY_TOP = 96; // lg:top-24 = 96px
+
+    const handleScroll = () => {
+      if (!ownerCardRef.current || !infoRef.current) return;
+      if (window.innerWidth < 1024) return; // 手機用固定底部
+
+      const triggerY = rightColDocTopRef.current - STICKY_TOP;
+      const scrolled = window.scrollY - triggerY;
+
+      if (scrolled > 0) {
+        ownerCardRef.current.style.transform = `translateY(${scrolled}px)`;
+      } else {
+        ownerCardRef.current.style.transform = '';
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -247,7 +281,7 @@ export default function PropertyDetail() {
             {/* 照片區 */}
             <div className="space-y-3">
               <div
-                className="aspect-[4/3] max-h-[420px] rounded-2xl overflow-hidden bg-[#F2E9DF] cursor-zoom-in relative group"
+                className="w-full h-[420px] rounded-2xl overflow-hidden bg-[#F2E9DF] cursor-zoom-in relative group"
                 onClick={() => setLightboxIndex(activeImageIndex)}
               >
                 <img
@@ -353,7 +387,10 @@ export default function PropertyDetail() {
           </div>
 
           {/* ══ 右欄：單一 sticky div（Info + 屋主卡片）══ */}
-          <div className="lg:sticky lg:top-24 flex flex-col gap-3">
+          <div ref={rightColRef} className="lg:sticky lg:top-24 flex flex-col gap-3">
+
+            {/* Info 區（badge~詳細資訊）*/}
+            <div ref={infoRef} className="flex flex-col gap-3">
 
             {/* Badges */}
             <div className="flex flex-wrap gap-1.5">
@@ -430,9 +467,10 @@ export default function PropertyDetail() {
                 ))}
               </div>
             </div>
+            </div>{/* /infoRef */}
 
-            {/* 屋主卡片（desktop，在 sticky 內底部）*/}
-            <div className="hidden lg:flex flex-col gap-3 pt-4 border-t border-[#F2E9DF]">
+            {/* 屋主卡片（desktop，在 sticky 內底部，JS translateY 讓它隨頁滾動）*/}
+            <div ref={ownerCardRef} className="hidden lg:flex flex-col gap-3 pt-4 border-t border-[#F2E9DF]">
               <div className="flex items-center gap-3">
                 {property.owner.avatar ? (
                   <img src={property.owner.avatar} alt={property.owner.name} className="w-10 h-10 rounded-full object-cover border-2 border-[#E5D5C5]" referrerPolicy="no-referrer" />
