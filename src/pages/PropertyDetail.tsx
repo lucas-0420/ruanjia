@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { 
-  Bed, Bath, Maximize, MapPin, Heart, 
+import {
+  Bed, Bath, Maximize, MapPin, Heart,
   Share2, Phone, MessageSquare, ChevronLeft, CheckCircle2,
-  Calendar, Info, Layers, XCircle, Loader2
+  Calendar, Info, Layers, XCircle, Loader2, Expand, X
 } from 'lucide-react';
+import NearbyPlacesPanel from '../components/NearbyPlacesPanel';
 import { cn } from '../lib/utils';
 import AIAssistant from '../components/AIAssistant';
 import MapComponent from '../components/MapComponent';
@@ -26,6 +27,8 @@ export default function PropertyDetail() {
   const [isSending, setIsSending] = useState(false);
   const [similarProperties, setSimilarProperties] = useState<Property[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [showMapModal, setShowMapModal] = useState(false);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
 
   useEffect(() => {
     async function fetchProperty() {
@@ -204,7 +207,7 @@ export default function PropertyDetail() {
 
   return (
     <div className="min-h-screen bg-white pt-24 pb-20">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-10">
         {/* Breadcrumbs */}
         <div className="flex items-center gap-4 mb-8">
           <Link to="/listings" className="p-2.5 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
@@ -232,316 +235,272 @@ export default function PropertyDetail() {
           </button>
         </div>
 
-        {/* Gallery Section */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-12 h-[400px] md:h-[600px]">
-          <div className="md:col-span-2 h-full rounded-[32px] overflow-hidden shadow-xl cursor-pointer" onClick={() => setLightboxIndex(0)}>
-            <img src={property.images[0]} alt={property.title} className="w-full h-full object-cover hover:scale-105 transition-transform duration-700" referrerPolicy="no-referrer" />
-          </div>
-          <div className="hidden md:grid grid-rows-2 gap-4 h-full">
-            <div className="rounded-[32px] overflow-hidden shadow-lg cursor-pointer" onClick={() => setLightboxIndex(1)}>
-              <img src={property.images[1] || property.images[0]} alt={property.title} className="w-full h-full object-cover hover:scale-105 transition-transform duration-700" referrerPolicy="no-referrer" />
+
+        {/* ══ 貫穿兩欄：左65%內容 + 右sticky卡片 ══ */}
+        <div className="grid lg:grid-cols-[65%_1fr] gap-8 mb-14 items-start">
+
+          {/* ── 左欄：照片 + 詳細內容 ── */}
+          <div className="space-y-10">
+
+            {/* 主圖 */}
+            <div className="space-y-3">
+              <div
+                className="aspect-[4/3] rounded-2xl overflow-hidden bg-[#F2E9DF] cursor-zoom-in relative group"
+                onClick={() => setLightboxIndex(activeImageIndex)}
+              >
+                <img
+                  src={property.images[activeImageIndex]}
+                  alt={property.title}
+                  className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="absolute bottom-3 right-3 bg-black/50 text-white text-xs font-bold px-2.5 py-1 rounded-full backdrop-blur-sm">
+                  {activeImageIndex + 1} / {property.images.length}
+                </div>
+              </div>
+              {/* 縮圖列 */}
+              <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                {property.images.map((img, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setActiveImageIndex(i)}
+                    className={cn(
+                      'shrink-0 w-[72px] h-[72px] rounded-xl overflow-hidden border-2 transition-all',
+                      activeImageIndex === i
+                        ? 'border-[#F5A623] shadow-md'
+                        : 'border-transparent opacity-55 hover:opacity-90'
+                    )}
+                  >
+                    <img src={img} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="rounded-[32px] overflow-hidden shadow-lg cursor-pointer" onClick={() => setLightboxIndex(2)}>
-              <img src={property.images[2] || property.images[0]} alt={property.title} className="w-full h-full object-cover hover:scale-105 transition-transform duration-700" referrerPolicy="no-referrer" />
+
+            {/* 房源介紹 */}
+            <div className="border-t border-[#F2E9DF] pt-8">
+              <h2 className="text-xl font-bold text-[#3D2B1F] mb-4">房源介紹</h2>
+              <p className="text-[#7A5C48] text-base leading-relaxed whitespace-pre-line">{property.description}</p>
             </div>
-          </div>
-          <div className="hidden md:block h-full rounded-[32px] overflow-hidden shadow-lg relative cursor-pointer" onClick={() => setLightboxIndex(3)}>
-            <img src={property.images[3] || property.images[0]} alt={property.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-            {property.images.length > 4 && (
-              <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white">
-                <span className="text-3xl font-bold mb-2">+ {property.images.length - 3}</span>
-                <span className="text-sm font-medium uppercase tracking-widest">更多照片</span>
+
+            {/* 設施設備 */}
+            <div>
+              <h2 className="text-xl font-bold text-[#3D2B1F] mb-4">設施設備</h2>
+              <div className="flex flex-wrap gap-2">
+                {property.amenities.map(item => (
+                  <span key={item} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#E5D5C5] rounded-xl text-sm text-[#3D2B1F] font-medium shadow-sm">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-[#2E9E5A]" />
+                    {item}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* 地理位置 */}
+            <div>
+              <h2 className="text-xl font-bold text-[#3D2B1F] mb-4">地理位置</h2>
+              <div className="relative rounded-2xl overflow-hidden border border-[#E5D5C5] shadow-sm" style={{ height: 300 }}>
+                {property.location.lat && property.location.lng ? (
+                  <>
+                    <iframe
+                      title="地圖"
+                      width="100%"
+                      height="100%"
+                      style={{ border: 0 }}
+                      loading="lazy"
+                      allowFullScreen
+                      referrerPolicy="no-referrer-when-downgrade"
+                      src={`https://maps.google.com/maps?q=${property.location.lat},${property.location.lng}&z=16&output=embed&hl=zh-TW`}
+                    />
+                    <button
+                      onClick={() => setShowMapModal(true)}
+                      className="absolute top-3 right-3 flex items-center gap-1.5 bg-white/90 backdrop-blur-sm hover:bg-white text-[#3D2B1F] text-xs font-bold px-3 py-2 rounded-xl shadow-md border border-[#E5D5C5] transition-all"
+                    >
+                      <Expand className="w-3.5 h-3.5" />
+                      展開地圖與周邊
+                    </button>
+                  </>
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-[#FBF7F3] text-[#9A7D6B]">尚未設定地址座標</div>
+                )}
+              </div>
+            </div>
+
+            {/* 全螢幕地圖 Modal */}
+            {showMapModal && property.location.lat && property.location.lng && (
+              <div className="fixed inset-0 z-[200] flex flex-col">
+                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowMapModal(false)} />
+                <div className="relative m-3 md:m-6 flex-1 flex flex-col bg-white rounded-3xl overflow-hidden shadow-2xl">
+                  <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#F2E9DF] bg-white shrink-0">
+                    <div>
+                      <p className="text-xs text-[#9A7D6B] font-medium">地理位置與周邊</p>
+                      <p className="text-sm font-bold text-[#3D2B1F] line-clamp-1">{property.title}</p>
+                    </div>
+                    <button
+                      onClick={() => setShowMapModal(false)}
+                      className="w-9 h-9 flex items-center justify-center rounded-full bg-[#F2E9DF] text-[#7A5C48] hover:bg-[#E5D5C5] transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+                    <div className="flex-1 min-h-[240px] md:min-h-0">
+                      <MapComponent properties={[property]} />
+                    </div>
+                    <div className="w-full md:w-72 shrink-0 border-t md:border-t-0 md:border-l border-[#E5D5C5] overflow-hidden flex flex-col">
+                      <NearbyPlacesPanel lat={property.location.lat} lng={property.location.lng} className="flex-1" />
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
-        </div>
 
-        {/* Main Content Grid */}
-        <div className="grid lg:grid-cols-[1fr_400px] gap-12">
-          {/* Left Column */}
-          <div className="space-y-12">
-            {/* Header Info */}
-            <div className="border-b border-gray-100 pb-12">
-              <div className="flex flex-wrap gap-2 mb-6">
-                {property.isZeroFee && (
-                  <span className="px-4 py-1.5 bg-green-600 text-white text-[10px] font-bold uppercase tracking-widest rounded-full">
-                    免仲介費
-                  </span>
-                )}
-                <span className="px-4 py-1.5 bg-gray-900 text-white text-[10px] font-bold uppercase tracking-widest rounded-full">
-                  {property.type === 'apartment' ? '公寓' : property.type === 'house' ? '住宅' : property.type === 'studio' ? '套房' : '雅房'}
-                </span>
-                {property.tags?.map(tag => (
-                  <span key={tag} className="px-4 py-1.5 bg-orange-50 text-orange-600 text-[10px] font-bold uppercase tracking-widest rounded-full">
-                    {tag}
-                  </span>
-                ))}
-              </div>
-              
-              <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6 leading-tight">
-                {property.title}
-              </h1>
-              
-              <div className="flex items-center gap-2 text-gray-500 text-lg mb-8">
-                <MapPin className="w-6 h-6 text-orange-600" />
-                {property.location.address}, {property.location.district}, {property.location.city}
-              </div>
+          {/* ── 右欄：sticky 資訊卡（滾動到相似房源前停止）── */}
+          <div className="sticky top-24 flex flex-col gap-5">
 
-              <div className="p-8 bg-gray-50 rounded-[32px]">
-                <span className="text-xs text-gray-400 font-bold uppercase tracking-widest">月租金</span>
-                <div className="text-4xl font-black text-gray-900 mt-1">
-                  NT$ {property.price.toLocaleString()}
-                </div>
-              </div>
+            {/* Badges */}
+            <div className="flex flex-wrap gap-2">
+              {property.status === 'archived' && (
+                <span className="px-3 py-1 bg-[#3D2B1F]/80 text-white text-[10px] font-bold rounded-full">已下架</span>
+              )}
+              {property.isZeroFee && (
+                <span className="px-3 py-1 bg-[#F5A623] text-[#3D2B1F] text-[10px] font-bold rounded-full">屋主直租</span>
+              )}
+              <span className="px-3 py-1 bg-[#F2E9DF] text-[#7A5C48] text-[10px] font-bold rounded-full">
+                {property.type === 'apartment' ? '公寓' : property.type === 'house' ? '住宅' : property.type === 'studio' ? '套房' : '雅房'}
+              </span>
+              {property.tags?.map(tag => (
+                <span key={tag} className="px-3 py-1 bg-[#FFE8CC] text-[#8B5E3C] text-[10px] font-bold rounded-full">{tag}</span>
+              ))}
             </div>
 
-            {/* Quick Specs */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-              <div className="flex flex-col gap-3">
-                <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center">
-                  <Bed className="w-6 h-6 text-gray-900" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">格局</p>
-                  <p className="text-lg font-bold text-gray-900">{property.features.bedrooms} 房</p>
-                </div>
-              </div>
-              <div className="flex flex-col gap-3">
-                <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center">
-                  <Bath className="w-6 h-6 text-gray-900" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">衛浴</p>
-                  <p className="text-lg font-bold text-gray-900">{property.features.bathrooms} 衛</p>
-                </div>
-              </div>
-              <div className="flex flex-col gap-3">
-                <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center">
-                  <Maximize className="w-6 h-6 text-gray-900" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">坪數</p>
-                  <p className="text-lg font-bold text-gray-900">{property.features.area} 坪</p>
-                </div>
-              </div>
-              <div className="flex flex-col gap-3">
-                <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center">
-                  <Layers className="w-6 h-6 text-gray-900" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">樓層</p>
-                  <p className="text-lg font-bold text-gray-900">{property.features.floor}/{property.features.totalFloors || '--'} F</p>
-                </div>
-              </div>
+            {/* 標題 */}
+            <h1 className="text-2xl md:text-3xl font-bold text-[#3D2B1F] leading-snug">{property.title}</h1>
+
+            {/* 地址 */}
+            <div className="flex items-center gap-1.5 text-[#9A7D6B] text-sm">
+              <MapPin className="w-4 h-4 text-[#F5A623] shrink-0" />
+              {property.location.address}, {property.location.district}, {property.location.city}
             </div>
 
-            {/* Detailed Info Table */}
-            <div className="bg-gray-50 rounded-[40px] p-10">
-              <h2 className="text-2xl font-bold text-gray-900 mb-8 flex items-center gap-3">
-                <Info className="w-6 h-6 text-orange-600" />
-                詳細資訊
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
-                <div className="flex justify-between py-4 border-b border-gray-200">
-                  <span className="text-gray-500 font-medium">管理費</span>
-                  <span className="text-gray-900 font-bold">{property.features.managementFee ? `${property.features.managementFee.toLocaleString()} 元/月` : '無'}</span>
-                </div>
-                <div className="flex justify-between py-4 border-b border-gray-200">
-                  <span className="text-gray-500 font-medium">押金</span>
-                  <span className="text-gray-900 font-bold">{property.features.deposit || '面議'}</span>
-                </div>
-                <div className="flex justify-between py-4 border-b border-gray-200">
-                  <span className="text-gray-500 font-medium">最短租期</span>
-                  <span className="text-gray-900 font-bold">一年</span>
-                </div>
-                <div className="flex justify-between py-4 border-b border-gray-200">
-                  <span className="text-gray-500 font-medium">開伙</span>
-                  <span className="text-gray-900 font-bold">可</span>
-                </div>
-                <div className="flex justify-between py-4 border-b border-gray-200">
-                  <span className="text-gray-500 font-medium">養寵物</span>
-                  <span className="text-gray-900 font-bold">{property.amenities.includes('可養寵物') ? '可' : '不可'}</span>
-                </div>
-                <div className="flex justify-between py-4 border-b border-gray-200">
-                  <span className="text-gray-500 font-medium">身分限制</span>
-                  <span className="text-gray-900 font-bold">無</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Description */}
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-8">房源介紹</h2>
-              <p className="text-gray-600 text-lg leading-relaxed whitespace-pre-line">
-                {property.description}
+            {/* 租金 */}
+            <div className="bg-[#FFF8F0] rounded-2xl px-5 py-4 border border-[#FFE8CC]">
+              <p className="text-xs text-[#B8A090] font-bold mb-1">月租金</p>
+              <p className="text-3xl font-black text-[#F5A623]">
+                NT$ {property.price.toLocaleString()}
+                <span className="text-sm font-normal text-[#9A7D6B] ml-1">/月</span>
               </p>
+              {property.features.managementFee ? (
+                <p className="text-xs text-[#9A7D6B] mt-1">管理費 NT$ {property.features.managementFee.toLocaleString()}/月</p>
+              ) : null}
             </div>
 
-            {/* Amenities */}
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-8">設施設備</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                {property.amenities.map((item) => (
-                  <div key={item} className="flex items-center gap-3 p-4 bg-white border border-gray-100 rounded-2xl shadow-sm">
-                    <CheckCircle2 className="w-5 h-5 text-green-600" />
-                    <span className="text-gray-700 font-bold text-sm">{item}</span>
+            {/* 規格 4 格 */}
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { icon: Bed,      label: '格局', value: `${property.features.bedrooms} 房` },
+                { icon: Bath,     label: '衛浴', value: `${property.features.bathrooms} 衛` },
+                { icon: Maximize, label: '坪數', value: `${property.features.area} 坪` },
+                { icon: Layers,   label: '樓層', value: `${property.features.floor}/${property.features.totalFloors || '--'}F` },
+              ].map(({ icon: Icon, label, value }) => (
+                <div key={label} className="flex flex-col items-center gap-1.5 bg-[#FBF7F3] rounded-xl py-3 border border-[#F2E9DF]">
+                  <Icon className="w-4 h-4 text-[#F5A623]" />
+                  <p className="text-[10px] text-[#B8A090] font-bold">{label}</p>
+                  <p className="text-sm font-bold text-[#3D2B1F]">{value}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* 詳細資訊 */}
+            <div className="bg-[#FBF7F3] rounded-2xl p-4 border border-[#F2E9DF]">
+              <p className="text-xs font-bold text-[#B8A090] mb-3 flex items-center gap-1.5">
+                <Info className="w-3.5 h-3.5 text-[#F5A623]" />
+                詳細資訊
+              </p>
+              <div>
+                {[
+                  { label: '管理費', value: property.features.managementFee ? `${property.features.managementFee.toLocaleString()} 元/月` : '無' },
+                  { label: '押金',   value: property.features.deposit || '面議' },
+                  { label: '最短租期', value: '一年' },
+                  { label: '開伙',   value: '可' },
+                  { label: '養寵物', value: property.amenities.includes('可養寵物') ? '可' : '不可' },
+                  { label: '身分限制', value: '無' },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex justify-between py-2.5 border-b border-[#F2E9DF] last:border-0">
+                    <span className="text-xs text-[#9A7D6B]">{label}</span>
+                    <span className="text-xs font-bold text-[#3D2B1F]">{value}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Nearby Section */}
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-8">周邊環境</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="p-6 bg-blue-50 rounded-3xl border border-blue-100">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white">
-                      <MapPin className="w-5 h-5" />
-                    </div>
-                    <span className="font-bold text-blue-900">交通運輸</span>
-                  </div>
-                  <ul className="space-y-2 text-sm text-blue-800/80 font-medium">
-                    <li>• 捷運站 (步行 5 分鐘)</li>
-                    <li>• 公車站 (步行 2 分鐘)</li>
-                    <li>• YouBike 站點 (步行 3 分鐘)</li>
-                  </ul>
+            <div className="h-px bg-[#F2E9DF]" />
+
+            {/* 屋主資訊 */}
+            <div className="flex items-center gap-3">
+              {property.owner.avatar ? (
+                <img src={property.owner.avatar} alt={property.owner.name} className="w-11 h-11 rounded-full object-cover border-2 border-[#E5D5C5]" referrerPolicy="no-referrer" />
+              ) : (
+                <div className="w-11 h-11 rounded-full bg-[#FFE8CC] flex items-center justify-center border-2 border-[#E5D5C5]">
+                  <span className="text-base font-black text-[#F5A623]">{property.owner.name?.charAt(0) || '屋'}</span>
                 </div>
-                <div className="p-6 bg-orange-50 rounded-3xl border border-orange-100">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 bg-orange-600 rounded-xl flex items-center justify-center text-white">
-                      <Layers className="w-5 h-5" />
-                    </div>
-                    <span className="font-bold text-orange-900">生活機能</span>
-                  </div>
-                  <ul className="space-y-2 text-sm text-orange-800/80 font-medium">
-                    <li>• 便利商店 (步行 1 分鐘)</li>
-                    <li>• 超級市場 (步行 8 分鐘)</li>
-                    <li>• 傳統市場 (步行 10 分鐘)</li>
-                  </ul>
-                </div>
-                <div className="p-6 bg-green-50 rounded-3xl border border-green-100">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 bg-green-600 rounded-xl flex items-center justify-center text-white">
-                      <CheckCircle2 className="w-5 h-5" />
-                    </div>
-                    <span className="font-bold text-green-900">休閒教育</span>
-                  </div>
-                  <ul className="space-y-2 text-sm text-green-800/80 font-medium">
-                    <li>• 公園綠地 (步行 5 分鐘)</li>
-                    <li>• 國民小學 (步行 12 分鐘)</li>
-                    <li>• 健身中心 (步行 7 分鐘)</li>
-                  </ul>
-                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-[#9A7D6B]">{property.owner.role || '屋主'}</p>
+                <p className="text-sm font-bold text-[#3D2B1F] truncate">{property.owner.name}</p>
               </div>
+              <span className="flex items-center gap-1 text-[10px] text-[#2E9E5A] bg-[#F0FAF4] px-2 py-1 rounded-full font-bold">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#2E9E5A] inline-block" />
+                在線
+              </span>
             </div>
 
-            {/* Location Map */}
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-8">地理位置</h2>
-              <div className="h-[400px] w-full rounded-[40px] overflow-hidden border border-gray-100 shadow-xl">
-                <MapComponent properties={[property]} />
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column - Sidebar */}
-          <div className="space-y-8">
-            {/* Owner Card */}
-            <div className="sticky top-32 p-10 bg-white rounded-[40px] border border-gray-100 shadow-2xl shadow-gray-200/50">
-              <div className="flex items-center gap-5 mb-10">
-                <div className="relative">
-                  {property.owner.avatar ? (
-                    <img
-                      src={property.owner.avatar}
-                      alt={property.owner.name}
-                      className="w-20 h-20 rounded-[24px] object-cover shadow-lg"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <div className="w-20 h-20 rounded-[24px] bg-orange-100 flex items-center justify-center shadow-lg">
-                      <span className="text-2xl font-black text-orange-600">
-                        {property.owner.name?.charAt(0) || '屋'}
-                      </span>
-                    </div>
-                  )}
-                  <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-green-500 border-4 border-white rounded-full" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="px-2 py-0.5 bg-orange-50 text-orange-600 text-[10px] font-bold uppercase tracking-widest rounded">
-                      {property.owner.role || '屋主'}
-                    </span>
-                  </div>
-                  <p className="text-2xl font-black text-gray-900">{property.owner.name}</p>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <button 
-                  onClick={() => setShowBookingModal(true)}
-                  className="w-full h-16 flex items-center justify-center gap-3 bg-orange-600 text-white rounded-2xl font-bold hover:bg-orange-700 transition-all shadow-xl shadow-orange-600/20"
+            {/* 聯絡按鈕 */}
+            <div className="space-y-2.5">
+              <button
+                onClick={() => setShowBookingModal(true)}
+                className="w-full h-12 flex items-center justify-center gap-2 bg-[#F5A623] hover:bg-[#FFB830] text-[#3D2B1F] rounded-xl font-bold text-sm transition-colors shadow-sm"
+              >
+                <Calendar className="w-4 h-4" />
+                預約看房
+              </button>
+              {(property.owner.lineId || property.owner.phone) && (
+                <a
+                  href={property.owner.lineId
+                    ? `https://line.me/ti/p/~${property.owner.lineId.replace(/^@/, '')}`
+                    : `https://line.me/ti/p/+886${property.owner.phone!.replace(/^0/, '')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full h-12 flex items-center justify-center gap-2 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-xl font-bold text-sm transition-colors shadow-sm"
                 >
-                  <Calendar className="w-6 h-6" />
-                  預約看房
-                </button>
-                {property.owner.lineId ? (
-                  <a
-                    href={`https://line.me/ti/p/~${property.owner.lineId.replace(/^@/, '')}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full h-16 flex items-center justify-center gap-3 bg-[#06C755] text-white rounded-2xl font-bold hover:bg-[#05b34c] transition-all shadow-xl shadow-green-600/10"
-                  >
-                    <div className="w-6 h-6 bg-white rounded-lg flex items-center justify-center text-[#06C755]">
-                      <span className="text-[12px] font-black">L</span>
-                    </div>
-                    LINE 聯繫屋主
-                  </a>
-                ) : property.owner.phone ? (
-                  <a
-                    href={`https://line.me/ti/p/+886${property.owner.phone.replace(/^0/, '')}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full h-16 flex items-center justify-center gap-3 bg-[#06C755] text-white rounded-2xl font-bold hover:bg-[#05b34c] transition-all shadow-xl shadow-green-600/10"
-                  >
-                    <div className="w-6 h-6 bg-white rounded-lg flex items-center justify-center text-[#06C755]">
-                      <span className="text-[12px] font-black">L</span>
-                    </div>
-                    LINE 聯繫屋主
-                  </a>
-                ) : null}
+                  <div className="w-5 h-5 bg-white rounded-md flex items-center justify-center text-[#06C755] text-[11px] font-black">L</div>
+                  LINE 聯繫屋主
+                </a>
+              )}
+              <div className="grid grid-cols-2 gap-2">
                 {property.owner.phone ? (
-                  <a
-                    href={`tel:${property.owner.phone}`}
-                    className="w-full h-16 flex items-center justify-center gap-3 bg-gray-900 text-white rounded-2xl font-bold hover:bg-gray-800 transition-all shadow-xl shadow-gray-900/10"
-                  >
-                    <Phone className="w-6 h-6" />
-                    致電屋主 {property.owner.phone}
+                  <a href={`tel:${property.owner.phone}`} className="h-12 flex items-center justify-center gap-2 bg-[#F2E9DF] hover:bg-[#E5D5C5] text-[#3D2B1F] rounded-xl font-bold text-sm transition-colors">
+                    <Phone className="w-4 h-4" />
+                    電話
                   </a>
                 ) : (
-                  <button className="w-full h-16 flex items-center justify-center gap-3 bg-gray-900 text-white rounded-2xl font-bold hover:bg-gray-800 transition-all shadow-xl shadow-gray-900/10 opacity-50 cursor-not-allowed">
-                    <Phone className="w-6 h-6" />
-                    致電屋主
-                  </button>
+                  <div className="h-12 flex items-center justify-center gap-2 bg-[#F2E9DF] text-[#B8A090] rounded-xl font-bold text-sm opacity-50">
+                    <Phone className="w-4 h-4" />
+                    電話
+                  </div>
                 )}
-                <button 
-                  onClick={() => setShowMessageModal(true)}
-                  className="w-full h-16 flex items-center justify-center gap-3 bg-orange-50 text-orange-600 rounded-2xl font-bold hover:bg-orange-100 transition-all"
-                >
-                  <MessageSquare className="w-6 h-6" />
-                  發送訊息
+                <button onClick={() => setShowMessageModal(true)} className="h-12 flex items-center justify-center gap-2 bg-[#F2E9DF] hover:bg-[#E5D5C5] text-[#3D2B1F] rounded-xl font-bold text-sm transition-colors">
+                  <MessageSquare className="w-4 h-4" />
+                  留言
                 </button>
               </div>
-
-              <div className="mt-10 pt-10 border-t border-gray-50">
-                <div className="flex items-center justify-center gap-2 text-gray-400 font-bold text-xs uppercase tracking-widest">
-                  <Calendar className="w-4 h-4" />
-                  平均回覆時間：2 小時內
-                </div>
-              </div>
             </div>
+
+            <p className="text-xs text-[#9A7D6B] text-center">押金：{property.features.deposit || '面議'} ・ 平均回覆：2 小時內</p>
           </div>
         </div>
+
 
         {/* Similar Properties */}
         {similarProperties.length > 0 && (

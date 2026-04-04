@@ -27,7 +27,7 @@ export default function MapComponent({ properties, onPropertyClick }: MapCompone
 
   return (
     <div className="w-full h-full rounded-[40px] overflow-hidden shadow-2xl border border-gray-100 relative">
-      <APIProvider apiKey={API_KEY}>
+      <APIProvider apiKey={API_KEY} libraries={['places']}>
         <MapInner properties={properties} onPropertyClick={onPropertyClick} />
       </APIProvider>
     </div>

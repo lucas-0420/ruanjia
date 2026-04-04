@@ -521,6 +521,57 @@ app.get(['/api/config-status', '/api/config-status/'], (req, res) => {
   });
 });
 
+/* ── Google Places API (New) Nearby Search 代理 ── */
+app.get('/api/nearby', async (req, res) => {
+  const { lat, lng, type, radius = '2000' } = req.query as Record<string, string>;
+  const key = process.env.VITE_GOOGLE_MAPS_API_KEY;
+
+  if (!lat || !lng || !type || !key) {
+    return res.status(400).json({ error: 'missing params' });
+  }
+
+  try {
+    // Places API (New) 使用 POST + JSON body
+    const r = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': key,
+        'X-Goog-FieldMask': 'places.displayName,places.location',
+      },
+      body: JSON.stringify({
+        includedTypes: [type],
+        maxResultCount: 20,
+        languageCode: 'zh-TW',
+        locationRestriction: {
+          circle: {
+            center: { latitude: parseFloat(lat), longitude: parseFloat(lng) },
+            radius: parseFloat(radius),
+          },
+        },
+      }),
+    });
+
+    const data = await r.json() as any;
+
+    if (!r.ok) {
+      console.error('[nearby] Places API (New) error:', data.error?.message);
+      return res.status(502).json({ error: data.error?.status, message: data.error?.message });
+    }
+
+    const results = (data.places || []).map((p: any) => ({
+      name: p.displayName?.text || '',
+      lat: p.location?.latitude,
+      lng: p.location?.longitude,
+    })).filter((p: any) => p.name && p.lat && p.lng);
+
+    res.json({ results });
+  } catch (e: any) {
+    console.error('[nearby] fetch error:', e.message);
+    res.status(500).json({ error: 'internal' });
+  }
+});
+
 // Vite middleware for development
 if (process.env.NODE_ENV !== 'production') {
   const vite = await createViteServer({
