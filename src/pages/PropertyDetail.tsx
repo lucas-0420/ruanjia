@@ -206,7 +206,7 @@ export default function PropertyDetail() {
   }
 
   return (
-    <div className="min-h-screen bg-white pt-24 pb-20">
+    <div className="min-h-screen bg-white pt-24 pb-32 lg:pb-20">
       <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-10">
         {/* Breadcrumbs */}
         <div className="flex items-center gap-4 mb-8">
@@ -295,148 +295,149 @@ export default function PropertyDetail() {
             </div>
           </div>
 
-          {/* ── 2. 右欄資訊卡：mobile order-2，desktop col-2 row-span-2 sticky ── */}
-          <div className="order-2 lg:row-span-2 sticky top-24 flex flex-col gap-5">
+          {/* ── 2. 右欄：mobile order-2（無sticky），desktop col-2 row-span-2 ── */}
+          <div className="order-2 lg:row-span-2 flex flex-col">
 
-            {/* Badges */}
-            <div className="flex flex-wrap gap-2">
-              {property.status === 'archived' && (
-                <span className="px-3 py-1 bg-[#3D2B1F]/80 text-white text-[10px] font-bold rounded-full">已下架</span>
-              )}
-              {property.isZeroFee && (
-                <span className="px-3 py-1 bg-[#F5A623] text-[#3D2B1F] text-[10px] font-bold rounded-full">屋主直租</span>
-              )}
-              <span className="px-3 py-1 bg-[#F2E9DF] text-[#7A5C48] text-[10px] font-bold rounded-full">
-                {property.type === 'apartment' ? '公寓' : property.type === 'house' ? '住宅' : property.type === 'studio' ? '套房' : '雅房'}
-              </span>
-              {property.tags?.map(tag => (
-                <span key={tag} className="px-3 py-1 bg-[#FFE8CC] text-[#8B5E3C] text-[10px] font-bold rounded-full">{tag}</span>
-              ))}
-            </div>
+            {/* 價格/規格/詳細資訊：desktop 固定不動 */}
+            <div className="lg:sticky lg:top-24 flex flex-col gap-5">
 
-            {/* 標題 */}
-            <h1 className="text-2xl md:text-3xl font-bold text-[#3D2B1F] leading-snug">{property.title}</h1>
+              {/* Badges */}
+              <div className="flex flex-wrap gap-2">
+                {property.status === 'archived' && (
+                  <span className="px-3 py-1 bg-[#3D2B1F]/80 text-white text-[10px] font-bold rounded-full">已下架</span>
+                )}
+                {property.isZeroFee && (
+                  <span className="px-3 py-1 bg-[#F5A623] text-[#3D2B1F] text-[10px] font-bold rounded-full">屋主直租</span>
+                )}
+                <span className="px-3 py-1 bg-[#F2E9DF] text-[#7A5C48] text-[10px] font-bold rounded-full">
+                  {property.type === 'apartment' ? '公寓' : property.type === 'house' ? '住宅' : property.type === 'studio' ? '套房' : '雅房'}
+                </span>
+                {property.tags?.map(tag => (
+                  <span key={tag} className="px-3 py-1 bg-[#FFE8CC] text-[#8B5E3C] text-[10px] font-bold rounded-full">{tag}</span>
+                ))}
+              </div>
 
-            {/* 地址 */}
-            <div className="flex items-center gap-1.5 text-[#9A7D6B] text-sm">
-              <MapPin className="w-4 h-4 text-[#F5A623] shrink-0" />
-              {property.location.address}, {property.location.district}, {property.location.city}
-            </div>
+              {/* 標題 */}
+              <h1 className="text-2xl md:text-3xl font-bold text-[#3D2B1F] leading-snug">{property.title}</h1>
 
-            {/* 租金 */}
-            <div className="bg-[#FFF8F0] rounded-2xl px-5 py-4 border border-[#FFE8CC]">
-              <p className="text-xs text-[#B8A090] font-bold mb-1">月租金</p>
-              <p className="text-3xl font-black text-[#F5A623]">
-                NT$ {property.price.toLocaleString()}
-                <span className="text-sm font-normal text-[#9A7D6B] ml-1">/月</span>
-              </p>
-              {property.features.managementFee ? (
-                <p className="text-xs text-[#9A7D6B] mt-1">管理費 NT$ {property.features.managementFee.toLocaleString()}/月</p>
-              ) : null}
-            </div>
+              {/* 地址 */}
+              <div className="flex items-center gap-1.5 text-[#9A7D6B] text-sm">
+                <MapPin className="w-4 h-4 text-[#F5A623] shrink-0" />
+                {property.location.address}, {property.location.district}, {property.location.city}
+              </div>
 
-            {/* 規格 4 格 */}
-            <div className="grid grid-cols-4 gap-2">
-              {[
-                { icon: Bed,      label: '格局', value: `${property.features.bedrooms} 房` },
-                { icon: Bath,     label: '衛浴', value: `${property.features.bathrooms} 衛` },
-                { icon: Maximize, label: '坪數', value: `${property.features.area} 坪` },
-                { icon: Layers,   label: '樓層', value: `${property.features.floor}/${property.features.totalFloors || '--'}F` },
-              ].map(({ icon: Icon, label, value }) => (
-                <div key={label} className="flex flex-col items-center gap-1.5 bg-[#FBF7F3] rounded-xl py-3 border border-[#F2E9DF]">
-                  <Icon className="w-4 h-4 text-[#F5A623]" />
-                  <p className="text-[10px] text-[#B8A090] font-bold">{label}</p>
-                  <p className="text-sm font-bold text-[#3D2B1F]">{value}</p>
-                </div>
-              ))}
-            </div>
+              {/* 租金 */}
+              <div className="bg-[#FFF8F0] rounded-2xl px-5 py-4 border border-[#FFE8CC]">
+                <p className="text-xs text-[#B8A090] font-bold mb-1">月租金</p>
+                <p className="text-3xl font-black text-[#F5A623]">
+                  NT$ {property.price.toLocaleString()}
+                  <span className="text-sm font-normal text-[#9A7D6B] ml-1">/月</span>
+                </p>
+                {property.features.managementFee ? (
+                  <p className="text-xs text-[#9A7D6B] mt-1">管理費 NT$ {property.features.managementFee.toLocaleString()}/月</p>
+                ) : null}
+              </div>
 
-            {/* 詳細資訊 */}
-            <div className="bg-[#FBF7F3] rounded-2xl p-4 border border-[#F2E9DF]">
-              <p className="text-xs font-bold text-[#B8A090] mb-3 flex items-center gap-1.5">
-                <Info className="w-3.5 h-3.5 text-[#F5A623]" />
-                詳細資訊
-              </p>
-              <div>
+              {/* 規格 4 格 */}
+              <div className="grid grid-cols-4 gap-2">
                 {[
-                  { label: '管理費', value: property.features.managementFee ? `${property.features.managementFee.toLocaleString()} 元/月` : '無' },
-                  { label: '押金',   value: property.features.deposit || '面議' },
-                  { label: '最短租期', value: '一年' },
-                  { label: '開伙',   value: '可' },
-                  { label: '養寵物', value: property.amenities.includes('可養寵物') ? '可' : '不可' },
-                  { label: '身分限制', value: '無' },
-                ].map(({ label, value }) => (
-                  <div key={label} className="flex justify-between py-2.5 border-b border-[#F2E9DF] last:border-0">
-                    <span className="text-xs text-[#9A7D6B]">{label}</span>
-                    <span className="text-xs font-bold text-[#3D2B1F]">{value}</span>
+                  { icon: Bed,      label: '格局', value: `${property.features.bedrooms} 房` },
+                  { icon: Bath,     label: '衛浴', value: `${property.features.bathrooms} 衛` },
+                  { icon: Maximize, label: '坪數', value: `${property.features.area} 坪` },
+                  { icon: Layers,   label: '樓層', value: `${property.features.floor}/${property.features.totalFloors || '--'}F` },
+                ].map(({ icon: Icon, label, value }) => (
+                  <div key={label} className="flex flex-col items-center gap-1.5 bg-[#FBF7F3] rounded-xl py-3 border border-[#F2E9DF]">
+                    <Icon className="w-4 h-4 text-[#F5A623]" />
+                    <p className="text-[10px] text-[#B8A090] font-bold">{label}</p>
+                    <p className="text-sm font-bold text-[#3D2B1F]">{value}</p>
                   </div>
                 ))}
               </div>
-            </div>
 
-            <div className="h-px bg-[#F2E9DF]" />
-
-            {/* 屋主資訊 */}
-            <div className="flex items-center gap-3">
-              {property.owner.avatar ? (
-                <img src={property.owner.avatar} alt={property.owner.name} className="w-11 h-11 rounded-full object-cover border-2 border-[#E5D5C5]" referrerPolicy="no-referrer" />
-              ) : (
-                <div className="w-11 h-11 rounded-full bg-[#FFE8CC] flex items-center justify-center border-2 border-[#E5D5C5]">
-                  <span className="text-base font-black text-[#F5A623]">{property.owner.name?.charAt(0) || '屋'}</span>
+              {/* 詳細資訊 */}
+              <div className="bg-[#FBF7F3] rounded-2xl p-4 border border-[#F2E9DF]">
+                <p className="text-xs font-bold text-[#B8A090] mb-3 flex items-center gap-1.5">
+                  <Info className="w-3.5 h-3.5 text-[#F5A623]" />
+                  詳細資訊
+                </p>
+                <div>
+                  {[
+                    { label: '管理費', value: property.features.managementFee ? `${property.features.managementFee.toLocaleString()} 元/月` : '無' },
+                    { label: '押金',   value: property.features.deposit || '面議' },
+                    { label: '最短租期', value: '一年' },
+                    { label: '開伙',   value: '可' },
+                    { label: '養寵物', value: property.amenities.includes('可養寵物') ? '可' : '不可' },
+                    { label: '身分限制', value: '無' },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="flex justify-between py-2.5 border-b border-[#F2E9DF] last:border-0">
+                      <span className="text-xs text-[#9A7D6B]">{label}</span>
+                      <span className="text-xs font-bold text-[#3D2B1F]">{value}</span>
+                    </div>
+                  ))}
                 </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="text-xs text-[#9A7D6B]">{property.owner.role || '屋主'}</p>
-                <p className="text-sm font-bold text-[#3D2B1F] truncate">{property.owner.name}</p>
               </div>
-              <span className="flex items-center gap-1 text-[10px] text-[#2E9E5A] bg-[#F0FAF4] px-2 py-1 rounded-full font-bold">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#2E9E5A] inline-block" />
-                在線
-              </span>
             </div>
 
-            {/* 聯絡按鈕 */}
-            <div className="space-y-2.5">
-              <button
-                onClick={() => setShowBookingModal(true)}
-                className="w-full h-12 flex items-center justify-center gap-2 bg-[#F5A623] hover:bg-[#FFB830] text-[#3D2B1F] rounded-xl font-bold text-sm transition-colors shadow-sm"
-              >
-                <Calendar className="w-4 h-4" />
-                預約看房
-              </button>
-              {(property.owner.lineId || property.owner.phone) && (
-                <a
-                  href={property.owner.lineId
-                    ? `https://line.me/ti/p/~${property.owner.lineId.replace(/^@/, '')}`
-                    : `https://line.me/ti/p/+886${property.owner.phone!.replace(/^0/, '')}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full h-12 flex items-center justify-center gap-2 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-xl font-bold text-sm transition-colors shadow-sm"
-                >
-                  <div className="w-5 h-5 bg-white rounded-md flex items-center justify-center text-[#06C755] text-[11px] font-black">L</div>
-                  LINE 聯繫屋主
-                </a>
-              )}
-              <div className="grid grid-cols-2 gap-2">
-                {property.owner.phone ? (
-                  <a href={`tel:${property.owner.phone}`} className="h-12 flex items-center justify-center gap-2 bg-[#F2E9DF] hover:bg-[#E5D5C5] text-[#3D2B1F] rounded-xl font-bold text-sm transition-colors">
-                    <Phone className="w-4 h-4" />
-                    電話
-                  </a>
+            {/* ── 屋主卡片：desktop only，隨頁面滾動 ── */}
+            <div className="hidden lg:flex flex-col gap-4 mt-6 pt-5 border-t border-[#F2E9DF]">
+              <div className="flex items-center gap-3">
+                {property.owner.avatar ? (
+                  <img src={property.owner.avatar} alt={property.owner.name} className="w-11 h-11 rounded-full object-cover border-2 border-[#E5D5C5]" referrerPolicy="no-referrer" />
                 ) : (
-                  <div className="h-12 flex items-center justify-center gap-2 bg-[#F2E9DF] text-[#B8A090] rounded-xl font-bold text-sm opacity-50">
-                    <Phone className="w-4 h-4" />
-                    電話
+                  <div className="w-11 h-11 rounded-full bg-[#FFE8CC] flex items-center justify-center border-2 border-[#E5D5C5]">
+                    <span className="text-base font-black text-[#F5A623]">{property.owner.name?.charAt(0) || '屋'}</span>
                   </div>
                 )}
-                <button onClick={() => setShowMessageModal(true)} className="h-12 flex items-center justify-center gap-2 bg-[#F2E9DF] hover:bg-[#E5D5C5] text-[#3D2B1F] rounded-xl font-bold text-sm transition-colors">
-                  <MessageSquare className="w-4 h-4" />
-                  留言
-                </button>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-[#9A7D6B]">{property.owner.role || '屋主'}</p>
+                  <p className="text-sm font-bold text-[#3D2B1F] truncate">{property.owner.name}</p>
+                </div>
+                <span className="flex items-center gap-1 text-[10px] text-[#2E9E5A] bg-[#F0FAF4] px-2 py-1 rounded-full font-bold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#2E9E5A] inline-block" />
+                  在線
+                </span>
               </div>
+              <div className="space-y-2.5">
+                <button
+                  onClick={() => setShowBookingModal(true)}
+                  className="w-full h-12 flex items-center justify-center gap-2 bg-[#F5A623] hover:bg-[#FFB830] text-[#3D2B1F] rounded-xl font-bold text-sm transition-colors shadow-sm"
+                >
+                  <Calendar className="w-4 h-4" />
+                  預約看房
+                </button>
+                {(property.owner.lineId || property.owner.phone) && (
+                  <a
+                    href={property.owner.lineId
+                      ? `https://line.me/ti/p/~${property.owner.lineId.replace(/^@/, '')}`
+                      : `https://line.me/ti/p/+886${property.owner.phone!.replace(/^0/, '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full h-12 flex items-center justify-center gap-2 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-xl font-bold text-sm transition-colors shadow-sm"
+                  >
+                    <div className="w-5 h-5 bg-white rounded-md flex items-center justify-center text-[#06C755] text-[11px] font-black">L</div>
+                    LINE 聯繫屋主
+                  </a>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  {property.owner.phone ? (
+                    <a href={`tel:${property.owner.phone}`} className="h-12 flex items-center justify-center gap-2 bg-[#F2E9DF] hover:bg-[#E5D5C5] text-[#3D2B1F] rounded-xl font-bold text-sm transition-colors">
+                      <Phone className="w-4 h-4" />
+                      電話
+                    </a>
+                  ) : (
+                    <div className="h-12 flex items-center justify-center gap-2 bg-[#F2E9DF] text-[#B8A090] rounded-xl font-bold text-sm opacity-50">
+                      <Phone className="w-4 h-4" />
+                      電話
+                    </div>
+                  )}
+                  <button onClick={() => setShowMessageModal(true)} className="h-12 flex items-center justify-center gap-2 bg-[#F2E9DF] hover:bg-[#E5D5C5] text-[#3D2B1F] rounded-xl font-bold text-sm transition-colors">
+                    <MessageSquare className="w-4 h-4" />
+                    留言
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-[#9A7D6B] text-center">押金：{property.features.deposit || '面議'} ・ 平均回覆：2 小時內</p>
             </div>
-
-            <p className="text-xs text-[#9A7D6B] text-center">押金：{property.features.deposit || '面議'} ・ 平均回覆：2 小時內</p>
           </div>
 
           {/* ── 3. 左欄詳細內容：mobile order-3，desktop col-1 row-2 ── */}
@@ -553,6 +554,59 @@ export default function PropertyDetail() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* ── 手機版固定底部屋主欄（591 樣式）── */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-[#E5D5C5] shadow-[0_-4px_20px_rgba(0,0,0,0.08)]"
+           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="flex items-center gap-3 px-4 py-3">
+          {/* 屋主頭像 + 名稱 */}
+          <div className="flex items-center gap-2.5 flex-1 min-w-0">
+            {property.owner.avatar ? (
+              <img src={property.owner.avatar} alt={property.owner.name} className="w-10 h-10 rounded-full object-cover border-2 border-[#E5D5C5] shrink-0" referrerPolicy="no-referrer" />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-[#FFE8CC] flex items-center justify-center border-2 border-[#E5D5C5] shrink-0">
+                <span className="text-sm font-black text-[#F5A623]">{property.owner.name?.charAt(0) || '屋'}</span>
+              </div>
+            )}
+            <div className="min-w-0">
+              <p className="text-[10px] text-[#9A7D6B]">{property.owner.role || '屋主'}</p>
+              <p className="text-sm font-bold text-[#3D2B1F] truncate">{property.owner.name}</p>
+            </div>
+          </div>
+          {/* 聯絡按鈕 */}
+          <div className="flex items-center gap-2 shrink-0">
+            {property.owner.phone && (
+              <a
+                href={`tel:${property.owner.phone}`}
+                className="h-10 px-4 flex items-center gap-1.5 bg-[#F2E9DF] text-[#3D2B1F] rounded-xl font-bold text-sm"
+              >
+                <Phone className="w-4 h-4" />
+                電話
+              </a>
+            )}
+            {(property.owner.lineId || property.owner.phone) && (
+              <a
+                href={property.owner.lineId
+                  ? `https://line.me/ti/p/~${property.owner.lineId.replace(/^@/, '')}`
+                  : `https://line.me/ti/p/+886${property.owner.phone!.replace(/^0/, '')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="h-10 px-4 flex items-center gap-1.5 bg-[#06C755] text-white rounded-xl font-bold text-sm"
+              >
+                <div className="w-4 h-4 bg-white rounded flex items-center justify-center text-[#06C755] text-[10px] font-black">L</div>
+                LINE
+              </a>
+            )}
+            <button
+              onClick={() => setShowBookingModal(true)}
+              className="h-10 px-4 flex items-center gap-1.5 bg-[#F5A623] text-[#3D2B1F] rounded-xl font-bold text-sm"
+            >
+              <Calendar className="w-4 h-4" />
+              預約
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Booking Modal */}
