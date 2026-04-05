@@ -1,0 +1,11 @@
+{
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": {
+      "label": "App",
+      "onAutoForward": "openBrowserOnce",
+      "visibility": "public"
+    }
+  },
+  "postStartCommand": "npm run dev > /tmp/dev.log 2>&1 &"
+}
