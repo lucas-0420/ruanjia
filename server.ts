@@ -25,7 +25,6 @@ const lineConfig = {
 };
 
 const lineClient = new line.messagingApi.MessagingApiClient(lineConfig);
-const lineBlobClient = new line.messagingApi.MessagingApiBlobClient(lineConfig);
 
 // Gemini Config
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
@@ -204,8 +203,8 @@ app.post('/api/ai/chat', async (req, res) => {
 
     res.json({ reply: response.text });
   } catch (error: any) {
-    console.error('AI chat error:', error);
-    res.status(500).json({ error: '無法取得 AI 回應', detail: error.message });
+    addLog(`[AI-CHAT-ERROR] ${error.message}`);
+    res.status(500).json({ error: '無法取得 AI 回應' });
   }
 });
 
@@ -422,38 +421,32 @@ app.use(express.urlencoded({ extended: true }));
 
 const ADMIN_EMAIL = '0420.lucas111@gmail.com';
 
+// 驗證 JWT 並回傳用戶資料（透過 Supabase 驗簽，防偽造）
+async function verifyToken(token: string): Promise<{ id: string; email: string } | null> {
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  if (error || !user) return null;
+  return { id: user.id, email: user.email || '' };
+}
+
 // Admin Auth Middleware
 const requireAdmin = async (req: any, res: any, next: any) => {
   const token = req.headers['authorization']?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: '未授權' });
-  try {
-    // Decode JWT payload (base64) to get user id + email without extra network call
-    const parts = token.split('.');
-    if (parts.length !== 3) return res.status(401).json({ error: 'Token 無效' });
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-    const userId: string = payload.sub;
-    const userEmail: string = payload.email || '';
-    if (!userId) return res.status(401).json({ error: 'Token 無效' });
 
-    const isAdmin = userEmail === ADMIN_EMAIL ||
-      (await supabase.from('users').select('role').eq('id', userId).single()).data?.role === 'admin';
-    if (!isAdmin) return res.status(403).json({ error: '權限不足' });
-    req.user = { id: userId, email: userEmail };
-    next();
-  } catch {
-    return res.status(401).json({ error: 'Token 無效' });
-  }
+  const user = await verifyToken(token);
+  if (!user) return res.status(401).json({ error: 'Token 無效' });
+
+  const isAdmin = user.email === ADMIN_EMAIL ||
+    (await supabase.from('users').select('role').eq('id', user.id).single()).data?.role === 'admin';
+  if (!isAdmin) return res.status(403).json({ error: '權限不足' });
+
+  req.user = user;
+  next();
 };
 
 // Admin Logs API
 app.get('/api/admin/logs', requireAdmin, (req, res) => {
   res.json({ logs: serverLogs });
-});
-
-// Debug endpoint (temporary)
-app.get('/api/debug/users', async (req, res) => {
-  const { data, error } = await supabase.from('users').select('id, email, role').order('created_at', { ascending: false });
-  res.json({ users: data, error: error?.message });
 });
 
 // Admin Users API (service role bypasses RLS)
@@ -467,11 +460,8 @@ app.get('/api/admin/users', requireAdmin, async (req, res) => {
 app.post('/api/upload/image', express.raw({ type: () => true, limit: '55mb' }), async (req: any, res: any) => {
   const token = req.headers['authorization']?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: '未授權' });
-  try {
-    const parts = token.split('.');
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-    if (!payload.sub) return res.status(401).json({ error: 'Token 無效' });
-  } catch { return res.status(401).json({ error: 'Token 無效' }); }
+  const uploadUser = await verifyToken(token);
+  if (!uploadUser) return res.status(401).json({ error: 'Token 無效' });
 
   const mimeType = ((req.headers['content-type'] as string) || 'image/jpeg').split(';')[0].trim();
   const ext = mimeType.split('/')[1]?.split('+')[0] || 'jpg';
@@ -499,19 +489,11 @@ app.put('/api/properties/:id', async (req: any, res: any) => {
   const token = req.headers['authorization']?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: '未授權' });
 
-  let userId: string;
-  let userEmail: string;
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return res.status(401).json({ error: 'Token 無效' });
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-    userId = payload.sub;
-    userEmail = payload.email || '';
-    if (!userId) return res.status(401).json({ error: 'Token 無效' });
-  } catch {
-    return res.status(401).json({ error: 'Token 無效' });
-  }
+  const authUser = await verifyToken(token);
+  if (!authUser) return res.status(401).json({ error: 'Token 無效' });
 
+  const userId = authUser.id;
+  const userEmail = authUser.email;
   const { id } = req.params;
 
   // 檢查是否為 owner 或 admin
@@ -524,7 +506,21 @@ app.put('/api/properties/:id', async (req: any, res: any) => {
 
   if (!isAdmin && !isOwner) return res.status(403).json({ error: '無權限修改此物件' });
 
-  const { error } = await supabase.from('properties').update(req.body).eq('id', id);
+  // 白名單：只允許更新這些欄位，防止竄改 owner_id 等敏感欄位
+  const ALLOWED_FIELDS = [
+    'title', 'price', 'type', 'city', 'district', 'address',
+    'bedrooms', 'bathrooms', 'area', 'floor', 'total_floors',
+    'management_fee', 'deposit', 'amenities', 'images', 'description',
+    'owner_name', 'owner_phone', 'owner_line_id', 'owner_avatar',
+    'is_zero_fee', 'tags', 'status', 'lat', 'lng',
+  ];
+  const updates: Record<string, unknown> = {};
+  for (const key of ALLOWED_FIELDS) {
+    if (key in req.body) updates[key] = req.body[key];
+  }
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: '沒有可更新的欄位' });
+
+  const { error } = await supabase.from('properties').update(updates).eq('id', id);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
 });
@@ -590,7 +586,7 @@ app.get('/api/nearby', async (req, res) => {
     const data = await r.json() as any;
 
     if (!r.ok) {
-      console.error('[nearby] Places API (New) error:', data.error?.message);
+      addLog(`[NEARBY-ERROR] Places API: ${data.error?.message}`);
       return res.status(502).json({ error: data.error?.status, message: data.error?.message });
     }
 
@@ -602,7 +598,7 @@ app.get('/api/nearby', async (req, res) => {
 
     res.json({ results });
   } catch (e: any) {
-    console.error('[nearby] fetch error:', e.message);
+    addLog(`[NEARBY-ERROR] ${e.message}`);
     res.status(500).json({ error: 'internal' });
   }
 });
@@ -622,18 +618,6 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
-// Migration: Add owner_line_id column (run once)
-app.post('/api/admin/migrate', async (_req: any, res: any) => {
-  try {
-    // Test if column exists by selecting it
-    const { error: testErr } = await supabase.from('properties').select('owner_line_id').limit(1);
-    if (!testErr) return res.json({ ok: true, message: '欄位已存在，無需遷移' });
-    res.json({ ok: false, message: '請至 Supabase Dashboard > SQL Editor 執行：ALTER TABLE properties ADD COLUMN IF NOT EXISTS owner_line_id text;' });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
@@ -648,7 +632,10 @@ app.post('/api/ai/autofill', async (req, res) => {
     const response = await ai.models.generateContent({ model: "gemini-2.0-flash", contents: prompt, config: { responseMimeType: "application/json" } });
     const result = JSON.parse((response.text ?? '').replace(/```json|```/g,'').trim());
     res.json(result);
-  } catch(e: any) { res.status(500).json({ error: e.message }); }
+  } catch(e: any) {
+    addLog(`[AI-AUTOFILL-ERROR] ${e.message}`);
+    res.status(500).json({ error: 'AI 自動填寫失敗' });
+  }
 });
 
 app.post('/api/ai/description', async (req, res) => {
@@ -658,7 +645,10 @@ app.post('/api/ai/description', async (req, res) => {
     const prompt = `你是房地產文案專家，請根據以下資訊生成吸引人的繁體中文房源介紹，直接輸出介紹文字，不要其他說明。標題：${formData.title}，類型：${formData.type}，地點：${formData.city}${formData.district}，格局：${formData.bedrooms}房${formData.bathrooms}衛${formData.area}坪，設施：${(formData.amenities||[]).join('、')}`;
     const response = await ai.models.generateContent({ model: "gemini-2.0-flash", contents: prompt });
     res.json({ text: response.text });
-  } catch(e: any) { res.status(500).json({ error: e.message }); }
+  } catch(e: any) {
+    addLog(`[AI-DESCRIPTION-ERROR] ${e.message}`);
+    res.status(500).json({ error: 'AI 描述生成失敗' });
+  }
 });
 
 app.post('/api/ai/tags', async (req, res) => {
@@ -668,5 +658,8 @@ app.post('/api/ai/tags', async (req, res) => {
     const prompt = `根據以下房源描述生成 3-5 個簡短標籤（例如：近捷運、全新裝潢），只輸出標籤，用逗號分隔，不要其他文字。描述：${(description||'').substring(0,1000)}`;
     const response = await ai.models.generateContent({ model: "gemini-2.0-flash", contents: prompt });
     res.json({ tags: response.text });
-  } catch(e: any) { res.status(500).json({ error: e.message }); }
+  } catch(e: any) {
+    addLog(`[AI-TAGS-ERROR] ${e.message}`);
+    res.status(500).json({ error: 'AI 標籤生成失敗' });
+  }
 });
