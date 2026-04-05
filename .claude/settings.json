@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run:*)",
+      "Bash(netstat -ano)",
+      "Read(//d/暖家/**)",
+      "Bash(taskkill //PID 27380 //F)",
+      "Bash(taskkill //PID 9520 //F)",
+      "Bash(grep -v \"^0$\")",
+      "Bash(taskkill //PID 21524 //F)",
+      "Bash(taskkill //PID 41616 //F)"
+    ]
+  }
+}
