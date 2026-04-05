@@ -241,65 +241,124 @@ export default function PropertyDetail() {
         {/* ══ 2-column grid ══
              左欄(60%)：照片 + 詳細內容（自然流動）
              右欄(1fr)：單一 sticky div，Info + 屋主卡片全包在內（Step2 再用 JS 讓屋主卡片隨頁）*/}
-        {/* ══ 3-item grid ══
-             mobile flex-col order：照片(1)→ Info(2)→ 詳細內容(3)
-             desktop grid auto-placement：
-               照片 col-1/row-1 | Info(row-span-2) col-2/rows-1-2
-               詳細內容 col-1/row-2
-             lg:row-span-2 讓 sticky 含塊高 = 照片+內容，sticky 可全程運作 */}
         <div className="flex flex-col lg:grid lg:grid-cols-[60%_1fr] gap-8 mb-14 lg:items-start">
 
-          {/* ── 1. 照片：mobile order-1, desktop col-1/row-1 ── */}
-          <div className="order-1 lg:order-none space-y-3">
-            <div
-              className="w-full h-[420px] rounded-2xl overflow-hidden bg-[#F2E9DF] cursor-zoom-in relative group"
-              onClick={() => setLightboxIndex(activeImageIndex)}
-            >
-              <img
-                src={property.images[activeImageIndex]}
-                alt={property.title}
-                className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500"
-                referrerPolicy="no-referrer"
-              />
-              <div className="absolute bottom-3 right-3 bg-black/50 text-white text-xs font-bold px-2.5 py-1 rounded-full backdrop-blur-sm">
-                {activeImageIndex + 1} / {property.images.length}
+          {/* ══ 左欄：照片 + 詳細內容 ══ */}
+          <div className="flex flex-col gap-10">
+
+            {/* 照片區 */}
+            <div className="space-y-3">
+              <div
+                className="w-full h-[420px] rounded-2xl overflow-hidden bg-[#F2E9DF] cursor-zoom-in relative group"
+                onClick={() => setLightboxIndex(activeImageIndex)}
+              >
+                <img
+                  src={property.images[activeImageIndex]}
+                  alt={property.title}
+                  className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500"
+                  referrerPolicy="no-referrer"
+                />
+                {/* 計數 */}
+                <div className="absolute bottom-3 right-3 bg-black/50 text-white text-xs font-bold px-2.5 py-1 rounded-full backdrop-blur-sm">
+                  {activeImageIndex + 1} / {property.images.length}
+                </div>
+                {/* 左箭頭 */}
+                {activeImageIndex > 0 && (
+                  <button
+                    onClick={e => { e.stopPropagation(); setActiveImageIndex(i => Math.max(0, i - 1)); }}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center bg-black/40 hover:bg-black/65 text-white rounded-full backdrop-blur-sm transition-all"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                )}
+                {/* 右箭頭 */}
+                {activeImageIndex < property.images.length - 1 && (
+                  <button
+                    onClick={e => { e.stopPropagation(); setActiveImageIndex(i => Math.min(property.images.length - 1, i + 1)); }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center bg-black/40 hover:bg-black/65 text-white rounded-full backdrop-blur-sm transition-all"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                )}
               </div>
-              {activeImageIndex > 0 && (
-                <button
-                  onClick={e => { e.stopPropagation(); setActiveImageIndex(i => Math.max(0, i - 1)); }}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center bg-black/40 hover:bg-black/65 text-white rounded-full backdrop-blur-sm transition-all"
-                >
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-              )}
-              {activeImageIndex < property.images.length - 1 && (
-                <button
-                  onClick={e => { e.stopPropagation(); setActiveImageIndex(i => Math.min(property.images.length - 1, i + 1)); }}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center bg-black/40 hover:bg-black/65 text-white rounded-full backdrop-blur-sm transition-all"
-                >
-                  <ChevronRight className="w-5 h-5" />
-                </button>
-              )}
+              {/* 縮圖列 */}
+              <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                {property.images.map((img, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setActiveImageIndex(i)}
+                    className={cn(
+                      'shrink-0 w-[72px] h-[72px] rounded-xl overflow-hidden border-2 transition-all',
+                      activeImageIndex === i
+                        ? 'border-[#F5A623] shadow-md'
+                        : 'border-transparent opacity-55 hover:opacity-90'
+                    )}
+                  >
+                    <img src={img} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  </button>
+                ))}
+              </div>
             </div>
-            {/* 縮圖列 */}
-            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-              {property.images.map((img, i) => (
-                <button
-                  key={i}
-                  onClick={() => setActiveImageIndex(i)}
-                  className={cn(
-                    'shrink-0 w-[72px] h-[72px] rounded-xl overflow-hidden border-2 transition-all',
-                    activeImageIndex === i ? 'border-[#F5A623] shadow-md' : 'border-transparent opacity-55 hover:opacity-90'
+
+            {/* 詳細內容 */}
+            <div className="space-y-10">
+
+              {/* 房源介紹 */}
+              <div className="border-t border-[#F2E9DF] pt-8">
+                <h2 className="text-xl font-bold text-[#3D2B1F] mb-4">房源介紹</h2>
+                <p className="text-[#7A5C48] text-base leading-relaxed whitespace-pre-line">{property.description}</p>
+              </div>
+
+              {/* 設施設備 */}
+              <div>
+                <h2 className="text-xl font-bold text-[#3D2B1F] mb-4">設施設備</h2>
+                <div className="flex flex-wrap gap-2">
+                  {property.amenities.map(item => (
+                    <span key={item} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#E5D5C5] rounded-xl text-sm text-[#3D2B1F] font-medium shadow-sm">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-[#2E9E5A]" />
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* 地理位置 */}
+              <div>
+                <h2 className="text-xl font-bold text-[#3D2B1F] mb-4">地理位置</h2>
+                <div className="relative rounded-2xl overflow-hidden border border-[#E5D5C5] shadow-sm" style={{ height: 300 }}>
+                  {property.location.lat && property.location.lng ? (
+                    <>
+                      <iframe
+                        title="地圖"
+                        width="100%"
+                        height="100%"
+                        style={{ border: 0 }}
+                        loading="lazy"
+                        allowFullScreen
+                        referrerPolicy="no-referrer-when-downgrade"
+                        src={`https://maps.google.com/maps?q=${property.location.lat},${property.location.lng}&z=16&output=embed&hl=zh-TW`}
+                      />
+                      <button
+                        onClick={() => setShowMapModal(true)}
+                        className="absolute top-3 right-3 flex items-center gap-1.5 bg-white/90 backdrop-blur-sm hover:bg-white text-[#3D2B1F] text-xs font-bold px-3 py-2 rounded-xl shadow-md border border-[#E5D5C5] transition-all"
+                      >
+                        <Expand className="w-3.5 h-3.5" />
+                        展開地圖與周邊
+                      </button>
+                    </>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-[#FBF7F3] text-[#9A7D6B]">尚未設定地址座標</div>
                   )}
-                >
-                  <img src={img} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                </button>
-              ))}
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* ── 2. Info + 屋主卡片：mobile order-2, desktop col-2/row-span-2 sticky ── */}
-          <div className="order-2 lg:order-none lg:row-span-2 lg:sticky lg:top-24 flex flex-col gap-3">
+          {/* ══ 右欄：單一 sticky div（Info + 屋主卡片）══ */}
+          <div className="lg:sticky lg:top-24 flex flex-col gap-3">
+
+            {/* Info 區（badge~詳細資訊）*/}
+            <div className="flex flex-col gap-3">
 
             {/* Badges */}
             <div className="flex flex-wrap gap-1.5">
@@ -376,6 +435,7 @@ export default function PropertyDetail() {
                 ))}
               </div>
             </div>
+            </div>{/* /infoRef */}
 
             {/* 屋主卡片（desktop，在 sticky 內底部）*/}
             <div className="hidden lg:flex flex-col gap-3 pt-4 border-t border-[#F2E9DF]">
@@ -436,59 +496,6 @@ export default function PropertyDetail() {
                 </div>
               </div>
               <p className="text-[10px] text-[#9A7D6B] text-center">押金：{property.features.deposit || '面議'} ・ 平均回覆：2 小時內</p>
-            </div>
-          </div>
-
-          {/* ── 3. 詳細內容：mobile order-3, desktop col-1/row-2 ── */}
-          <div className="order-3 lg:order-none space-y-10">
-
-            {/* 房源介紹 */}
-            <div className="border-t border-[#F2E9DF] pt-8">
-              <h2 className="text-xl font-bold text-[#3D2B1F] mb-4">房源介紹</h2>
-              <p className="text-[#7A5C48] text-base leading-relaxed whitespace-pre-line">{property.description}</p>
-            </div>
-
-            {/* 設施設備 */}
-            <div>
-              <h2 className="text-xl font-bold text-[#3D2B1F] mb-4">設施設備</h2>
-              <div className="flex flex-wrap gap-2">
-                {property.amenities.map(item => (
-                  <span key={item} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#E5D5C5] rounded-xl text-sm text-[#3D2B1F] font-medium shadow-sm">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-[#2E9E5A]" />
-                    {item}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            {/* 地理位置 */}
-            <div>
-              <h2 className="text-xl font-bold text-[#3D2B1F] mb-4">地理位置</h2>
-              <div className="relative rounded-2xl overflow-hidden border border-[#E5D5C5] shadow-sm" style={{ height: 300 }}>
-                {property.location.lat && property.location.lng ? (
-                  <>
-                    <iframe
-                      title="地圖"
-                      width="100%"
-                      height="100%"
-                      style={{ border: 0 }}
-                      loading="lazy"
-                      allowFullScreen
-                      referrerPolicy="no-referrer-when-downgrade"
-                      src={`https://maps.google.com/maps?q=${property.location.lat},${property.location.lng}&z=16&output=embed&hl=zh-TW`}
-                    />
-                    <button
-                      onClick={() => setShowMapModal(true)}
-                      className="absolute top-3 right-3 flex items-center gap-1.5 bg-white/90 backdrop-blur-sm hover:bg-white text-[#3D2B1F] text-xs font-bold px-3 py-2 rounded-xl shadow-md border border-[#E5D5C5] transition-all"
-                    >
-                      <Expand className="w-3.5 h-3.5" />
-                      展開地圖與周邊
-                    </button>
-                  </>
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-[#FBF7F3] text-[#9A7D6B]">尚未設定地址座標</div>
-                )}
-              </div>
             </div>
           </div>
         </div>
