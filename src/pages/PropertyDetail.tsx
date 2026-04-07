@@ -172,9 +172,9 @@ export default function PropertyDetail() {
       alert('訊息已發送！');
       setShowMessageModal(false);
       setMessageContent('');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Message error:', error);
-      alert('發送失敗，請稍後再試。');
+      alert(`發送失敗：${error?.message || '請稍後再試'}`);
     } finally {
       setIsSending(false);
     }
