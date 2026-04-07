@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import NearbyPlacesPanel from '../components/NearbyPlacesPanel';
 import { cn } from '../lib/utils';
-import AIAssistant from '../components/AIAssistant';
 import MapComponent from '../components/MapComponent';
 import { supabase } from '../supabase';
 import { Property } from '../types';
@@ -756,7 +755,6 @@ export default function PropertyDetail() {
         </div>
       )}
 
-      <AIAssistant property={property} />
     </div>
   );
 }
