@@ -1,6 +1,8 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Heart, Search, User, LogOut, LayoutDashboard, Users, Briefcase } from 'lucide-react';
+import { Home, Heart, Search, User, LogOut, LayoutDashboard, Users, Briefcase, MessageSquare } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { supabase } from '../supabase';
 import { cn } from '../lib/utils';
 import { useFirebase } from '../context/SupabaseContext';
 
@@ -45,6 +47,25 @@ export default function Navbar() {
 
   const isAdmin = userRole === 'admin';
   const p = location.pathname;
+
+  // 未讀訊息數
+  const [unreadCount, setUnreadCount] = useState(0);
+  useEffect(() => {
+    if (!user) { setUnreadCount(0); return; }
+    const fetchUnread = async () => {
+      const { count } = await supabase
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('receiver_id', user.id)
+        .eq('is_read', false);
+      setUnreadCount(count || 0);
+    };
+    fetchUnread();
+    const ch = supabase.channel('navbar-unread')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, fetchUnread)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [user]);
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
   const handleLink = (path: string) => { if (p === path) scrollToTop(); };
@@ -107,6 +128,15 @@ export default function Navbar() {
                       刊登房源
                     </Link>
                   )}
+                  {/* 訊息圖示 */}
+                  <Link to="/messages" className="relative p-2 text-[#7A5C48] hover:text-[#F5A623] transition-colors">
+                    <MessageSquare className="w-5 h-5" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-[#F5A623] text-white text-[9px] flex items-center justify-center font-black">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </span>
+                    )}
+                  </Link>
                   <div className="flex items-center gap-3 pl-4 border-l border-[#E5D5C5]">
                     <Link to="/profile" className="flex items-center gap-2 group">
                       <img
@@ -162,6 +192,19 @@ export default function Navbar() {
           <BottomTab to="/"         icon={Home}   label="首頁" active={p === '/'} />
           <BottomTab to="/listings" icon={Search} label="找房" active={p === '/listings'} />
           <BottomTab to="/favorites" icon={Heart} label="收藏" active={p === '/favorites'} />
+          {/* 訊息 Tab（登入後顯示，帶未讀 badge） */}
+          {user ? (
+            <div className="flex-1 relative">
+              <BottomTab to="/messages" icon={MessageSquare} label="訊息" active={p === '/messages'} />
+              {unreadCount > 0 && (
+                <span className="absolute top-2 left-1/2 ml-2 w-4 h-4 rounded-full bg-[#F5A623] text-white text-[9px] flex items-center justify-center font-black pointer-events-none">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </div>
+          ) : (
+            <BottomTab to="/favorites" icon={Heart} label="收藏" active={p === '/favorites'} />
+          )}
           <BottomTab
             to={user ? '/profile' : undefined}
             icon={User}

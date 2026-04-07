@@ -469,8 +469,10 @@ export default function PropertyDetail() {
                   <a
                     href={property.owner.lineId
                       ? property.owner.lineId!.startsWith('U')
-                          ? `https://line.me/ti/p/${property.owner.lineId}`
-                          : `https://line.me/ti/p/~${property.owner.lineId!.replace(/^@/, '')}`
+                          ? `https://line.me/ti/p/${property.owner.lineId}`           // Supabase UID
+                          : property.owner.lineId!.startsWith('@')
+                              ? `https://line.me/ti/p/${property.owner.lineId}`       // 官方帳號 @xxx 保留 @
+                              : `https://line.me/ti/p/~${property.owner.lineId}`      // 個人 ID 加 ~
                       : `https://line.me/ti/p/+886${property.owner.phone!.replace(/^0/, '')}`}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -598,8 +600,10 @@ export default function PropertyDetail() {
               <a
                 href={property.owner.lineId
                   ? property.owner.lineId!.startsWith('U')
+                      ? `https://line.me/ti/p/${property.owner.lineId}`
+                      : property.owner.lineId!.startsWith('@')
                           ? `https://line.me/ti/p/${property.owner.lineId}`
-                          : `https://line.me/ti/p/~${property.owner.lineId!.replace(/^@/, '')}`
+                          : `https://line.me/ti/p/~${property.owner.lineId}`
                   : `https://line.me/ti/p/+886${property.owner.phone!.replace(/^0/, '')}`}
                 target="_blank"
                 rel="noopener noreferrer"

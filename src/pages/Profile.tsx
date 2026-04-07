@@ -196,20 +196,31 @@ export default function Profile() {
 
             {/* Messages */}
             {activeTab === 'messages' && (
-              <div className="divide-y divide-gray-50">
-                {messages.length === 0 && <div className="p-20 text-center text-gray-400">目前沒有訊息</div>}
-                {messages.map(msg => (
-                  <div key={msg.id} className={cn('p-6 hover:bg-gray-50', !msg.isRead && 'bg-orange-50/30')}>
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        {isAdmin && msg.senderName && <p className="text-xs font-bold text-orange-600 mb-1">{msg.senderName}</p>}
-                        <h3 className="font-bold text-gray-900">關於：{msg.propertyTitle}</h3>
+              <div>
+                {/* 前往完整聊天頁面 */}
+                <div className="p-4 border-b border-gray-50 flex justify-end">
+                  <Link
+                    to="/messages"
+                    className="text-xs font-bold text-orange-600 hover:text-orange-700 flex items-center gap-1"
+                  >
+                    開啟訊息中心 →
+                  </Link>
+                </div>
+                <div className="divide-y divide-gray-50">
+                  {messages.length === 0 && <div className="p-20 text-center text-gray-400">目前沒有訊息</div>}
+                  {messages.map(msg => (
+                    <div key={msg.id} className={cn('p-6 hover:bg-gray-50', !msg.isRead && 'bg-orange-50/30')}>
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          {isAdmin && msg.senderName && <p className="text-xs font-bold text-orange-600 mb-1">{msg.senderName}</p>}
+                          <h3 className="font-bold text-gray-900">關於：{msg.propertyTitle}</h3>
+                        </div>
+                        <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{new Date(msg.createdAt).toLocaleDateString()}</span>
                       </div>
-                      <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{new Date(msg.createdAt).toLocaleDateString()}</span>
+                      <p className="text-sm text-gray-600 leading-relaxed bg-gray-50 p-4 rounded-2xl">{msg.content}</p>
                     </div>
-                    <p className="text-sm text-gray-600 leading-relaxed bg-gray-50 p-4 rounded-2xl">{msg.content}</p>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             )}
 

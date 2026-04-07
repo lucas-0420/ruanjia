@@ -11,6 +11,7 @@ import AdminUsers from './pages/AdminUsers';
 import AgentDashboard from './pages/AgentDashboard';
 import PostProperty from './pages/PostProperty';
 import Profile from './pages/Profile';
+import Messages from './pages/Messages';
 import AIAssistant from './components/AIAssistant';
 import ConfigStatusBanner from './components/ConfigStatusBanner';
 import { AnimatePresence } from 'motion/react';
@@ -53,6 +54,7 @@ export default function App() {
                 <Route path="/admin/edit/:id" element={<PostProperty />} />
                 <Route path="/post"          element={<PostProperty />} />
                 <Route path="/profile"       element={<Profile />} />
+                <Route path="/messages"     element={<Messages />} />
               </Routes>
             </AnimatePresence>
           </div>
