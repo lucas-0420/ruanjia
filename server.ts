@@ -32,6 +32,28 @@ const lineClient = new line.messagingApi.MessagingApiClient(lineConfig);
 // Gemini Config
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
+// ── 管理員 LINE 警報 ──
+// 設定 ADMIN_LINE_USER_ID 環境變數（你的 LINE User ID，U 開頭）
+// 取得方式：在 LINE Bot 傳任意訊息，後端 log 會印出 userId
+const ADMIN_LINE_USER_ID = process.env.ADMIN_LINE_USER_ID || '';
+
+// 防止短時間內發送大量警報（每種訊息每 60 秒最多傳一次）
+const alertCooldown = new Map<string, number>();
+async function notifyAdmin(message: string, key = 'general') {
+  if (!ADMIN_LINE_USER_ID || !lineConfig.channelAccessToken) return;
+  const now = Date.now();
+  if (alertCooldown.has(key) && now - alertCooldown.get(key)! < 60_000) return;
+  alertCooldown.set(key, now);
+  try {
+    await lineClient.pushMessage({
+      to: ADMIN_LINE_USER_ID,
+      messages: [{ type: 'text', text: message }],
+    });
+  } catch {
+    // 警報傳送失敗不影響主流程
+  }
+}
+
 const app = express();
 const PORT = 3000;
 
@@ -49,6 +71,12 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: '請求過於頻繁，請稍後再試' },
+  handler: (req, res, next, options) => {
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    addLog(`[RATE-LIMIT] apiLimiter triggered: ${ip} → ${req.method} ${req.path}`);
+    notifyAdmin(`⚠️ 流量異常警報\nIP: ${ip}\n路徑: ${req.method} ${req.path}\n觸發: 一般 API 限制 (200次/15min)`, `rate-api-${ip}`);
+    res.status(options.statusCode).json(options.message);
+  },
 });
 // 寫入操作（新增/更新/刪除）：每 IP 每 15 分鐘 30 次
 const writeLimiter = rateLimit({
@@ -57,6 +85,12 @@ const writeLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: '操作過於頻繁，請稍後再試' },
+  handler: (req, res, next, options) => {
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    addLog(`[RATE-LIMIT] writeLimiter triggered: ${ip} → ${req.method} ${req.path}`);
+    notifyAdmin(`🚨 寫入操作異常警報\nIP: ${ip}\n路徑: ${req.method} ${req.path}\n觸發: 寫入限制 (30次/15min)\n⚠️ 可能有人嘗試暴力操作`, `rate-write-${ip}`);
+    res.status(options.statusCode).json(options.message);
+  },
 });
 // 管理後台：每 IP 每 15 分鐘 100 次
 const adminLimiter = rateLimit({
@@ -65,6 +99,12 @@ const adminLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: '請求過於頻繁，請稍後再試' },
+  handler: (req, res, next, options) => {
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    addLog(`[RATE-LIMIT] adminLimiter triggered: ${ip} → ${req.method} ${req.path}`);
+    notifyAdmin(`🔴 管理後台異常警報\nIP: ${ip}\n路徑: ${req.method} ${req.path}\n觸發: 管理 API 限制 (100次/15min)\n⚠️ 可能有人掃描後台`, `rate-admin-${ip}`);
+    res.status(options.statusCode).json(options.message);
+  },
 });
 
 // --- LOGGING MIDDLEWARE (TOP) ---
@@ -736,8 +776,31 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
+// ── 全局 Express 錯誤處理（捕獲所有未處理的 500）──
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const msg = err?.message || '未知錯誤';
+  addLog(`[SERVER-ERROR] ${req.method} ${req.path} → ${msg}`);
+  notifyAdmin(`💥 伺服器錯誤\n路徑: ${req.method} ${req.path}\n錯誤: ${msg.substring(0, 200)}`, `err-${req.path}`);
+  res.status(500).json({ error: '伺服器發生錯誤，請稍後再試' });
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on http://localhost:${PORT}`);
+  // 啟動時通知管理員（確認 LINE 警報設定正常）
+  if (ADMIN_LINE_USER_ID) {
+    notifyAdmin('✅ 暖家平台已啟動\n伺服器正常運行中', 'startup');
+  }
+});
+
+// ── 全局未捕獲例外（防止 crash）──
+process.on('uncaughtException', (err) => {
+  addLog(`[UNCAUGHT-EXCEPTION] ${err.message}`);
+  notifyAdmin(`💥 嚴重錯誤！伺服器可能崩潰\n${err.message.substring(0, 300)}`, 'uncaught');
+});
+process.on('unhandledRejection', (reason: any) => {
+  const msg = reason?.message || String(reason);
+  addLog(`[UNHANDLED-REJECTION] ${msg}`);
+  notifyAdmin(`⚠️ 未處理的非同步錯誤\n${msg.substring(0, 300)}`, 'rejection');
 });
 
 // --- AI 輔助路由 ---
