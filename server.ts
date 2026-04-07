@@ -9,6 +9,7 @@ import { GoogleGenAI } from "@google/genai";
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
+import crypto from 'crypto';
 
 dotenv.config();
 
@@ -839,21 +840,6 @@ app.get('/api/nearby', async (req, res) => {
   }
 });
 
-// Vite middleware for development
-if (process.env.NODE_ENV !== 'production') {
-  const vite = await createViteServer({
-    server: { middlewareMode: true },
-    appType: 'spa',
-  });
-  app.use(vite.middlewares);
-} else {
-  const distPath = path.join(process.cwd(), 'dist');
-  app.use(express.static(distPath));
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(distPath, 'index.html'));
-  });
-}
-
 // ──────────────────────────────────────────────────
 // LINE 綁定 — 代碼驗證流程（不需要建立新頻道）
 // 流程：
@@ -942,6 +928,133 @@ async function tryBindCode(text: string, lineUserId: string): Promise<boolean> {
     detail: `LINE 帳號綁定成功（代碼驗證）`,
   });
   return true;
+}
+
+// ──────────────────────────────────────────────────
+// LINE Login OAuth 綁定流程（更流暢的一鍵綁定）
+// Channel: lucas（Channel ID: 2009591272）
+// 同一 Provider 下 User ID 相同，代碼綁定與 OAuth 綁定結果等效
+// ──────────────────────────────────────────────────
+const LINE_LOGIN_CHANNEL_ID = process.env.LINE_LOGIN_CHANNEL_ID || '';
+const LINE_LOGIN_CHANNEL_SECRET = process.env.LINE_LOGIN_CHANNEL_SECRET || '';
+const LINE_LOGIN_CALLBACK_URL = process.env.LINE_LOGIN_CALLBACK_URL || 'http://localhost:3000/api/auth/line/callback';
+
+// state → { userId, expiresAt }，10 分鐘有效，一次性
+const lineLoginStates = new Map<string, { userId: string; expiresAt: number }>();
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of lineLoginStates) { if (v.expiresAt < now) lineLoginStates.delete(k); }
+}, 5 * 60 * 1000);
+
+// Step 1：前端導向此端點發起 LINE Login
+app.get('/api/auth/line/login', apiLimiter, (req: any, res: any) => {
+  const { userId } = req.query;
+  if (!userId || typeof userId !== 'string') {
+    return res.status(400).json({ error: 'userId 必填' });
+  }
+
+  const state = crypto.randomBytes(16).toString('hex');
+  lineLoginStates.set(state, { userId, expiresAt: Date.now() + 10 * 60 * 1000 });
+
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: LINE_LOGIN_CHANNEL_ID,
+    redirect_uri: LINE_LOGIN_CALLBACK_URL,
+    state,
+    scope: 'profile',
+  });
+
+  addLog(`[LINE-LOGIN] OAuth started for userId: ${userId}`);
+  res.redirect(`https://access.line.me/oauth2/v2.1/authorize?${params}`);
+});
+
+// Step 2：LINE 授權後回調
+app.get('/api/auth/line/callback', async (req: any, res: any) => {
+  const { code, state, error: lineError } = req.query;
+
+  if (lineError) {
+    addLog(`[LINE-LOGIN] User cancelled: ${lineError}`);
+    return res.redirect('/profile?tab=settings&line_bind=cancelled');
+  }
+
+  if (!code || !state || typeof code !== 'string' || typeof state !== 'string') {
+    return res.redirect('/profile?tab=settings&line_bind=error&reason=server');
+  }
+
+  const stateData = lineLoginStates.get(state);
+  if (!stateData || Date.now() > stateData.expiresAt) {
+    lineLoginStates.delete(state);
+    return res.redirect('/profile?tab=settings&line_bind=error&reason=expired');
+  }
+  lineLoginStates.delete(state); // 一次性使用
+
+  try {
+    // 用 code 換 access token
+    const tokenRes = await fetch('https://api.line.me/oauth2/v2.1/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: LINE_LOGIN_CALLBACK_URL,
+        client_id: LINE_LOGIN_CHANNEL_ID,
+        client_secret: LINE_LOGIN_CHANNEL_SECRET,
+      }),
+    });
+    const tokenData = await tokenRes.json() as any;
+    if (!tokenData.access_token) {
+      addLog(`[LINE-LOGIN] Token exchange failed: ${JSON.stringify(tokenData)}`);
+      return res.redirect('/profile?tab=settings&line_bind=error&reason=token');
+    }
+
+    // 取得 LINE 用戶資料（拿 userId）
+    const profileRes = await fetch('https://api.line.me/v2/profile', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    const lineProfile = await profileRes.json() as any;
+    if (!lineProfile.userId) {
+      return res.redirect('/profile?tab=settings&line_bind=error&reason=profile');
+    }
+
+    // 寫入資料庫
+    const { error: dbErr } = await supabase.from('users')
+      .update({ line_user_id: lineProfile.userId })
+      .eq('id', stateData.userId);
+
+    if (dbErr) {
+      addLog(`[LINE-LOGIN] DB error: ${dbErr.message}`);
+      return res.redirect('/profile?tab=settings&line_bind=error&reason=db');
+    }
+
+    addLog(`[LINE-LOGIN] ✅ Bound LINE ${lineProfile.userId} → platform user ${stateData.userId}`);
+    addEvent({
+      type: 'line_bind',
+      severity: 'info',
+      actor: stateData.userId,
+      target: lineProfile.userId,
+      detail: `LINE 帳號綁定成功（LINE Login OAuth）`,
+    });
+
+    res.redirect('/profile?tab=settings&line_bind=success');
+  } catch (err: any) {
+    addLog(`[LINE-LOGIN] Callback error: ${err.message}`);
+    res.redirect('/profile?tab=settings&line_bind=error&reason=server');
+  }
+});
+
+// Vite middleware for development（必須放在所有 API 路由之後）
+if (process.env.NODE_ENV !== 'production') {
+  const vite = await createViteServer({
+    server: { middlewareMode: true },
+    appType: 'spa',
+  });
+  app.use(vite.middlewares);
+} else {
+  const distPath = path.join(process.cwd(), 'dist');
+  app.use(express.static(distPath));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
 }
 
 // ── 全局 Express 錯誤處理（捕獲所有未處理的 500）──
