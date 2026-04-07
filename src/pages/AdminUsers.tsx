@@ -3,7 +3,7 @@ import { useFirebase, mapPropertyFromDB } from '../context/SupabaseContext';
 import { supabase } from '../supabase';
 import { Navigate, Link } from 'react-router-dom';
 import { cn } from '../lib/utils';
-import { Users, Smartphone, ShieldCheck, LayoutDashboard, Home, Edit, Trash2, Loader2, CheckCircle, Archive, Search, X, UserCheck, Building2, Crown, ScrollText, RefreshCw, ShieldAlert, ServerCrash, Trash, ArrowLeftRight, Power, AlertTriangle } from 'lucide-react';
+import { Users, Smartphone, ShieldCheck, LayoutDashboard, Home, Edit, Trash2, Loader2, CheckCircle, Archive, Search, X, UserCheck, Building2, Crown, ScrollText, RefreshCw, ShieldAlert, ServerCrash, Trash, ArrowLeftRight, Power, AlertTriangle, Link2 } from 'lucide-react';
 import { LineSyncPanel } from './AdminSync';
 import { Property } from '../types';
 
@@ -11,7 +11,7 @@ interface AppUser { id: string; email: string; displayName: string; photoUrl: st
 interface ConfirmModal { id: string; title: string; nextStatus: 'active' | 'archived'; }
 interface AdminEvent {
   id: string;
-  type: 'role_change' | 'property_status' | 'property_delete' | 'rate_limit' | 'server_error' | 'server_start' | 'login_fail';
+  type: 'role_change' | 'property_status' | 'property_delete' | 'rate_limit' | 'server_error' | 'server_start' | 'login_fail' | 'line_bind';
   severity: 'info' | 'warning' | 'error';
   actor: string;
   target: string;
@@ -178,6 +178,7 @@ export default function AdminUsers() {
     server_error:    { label: '伺服器錯誤', Icon: ServerCrash,  color: 'text-red-700 bg-red-100' },
     server_start:    { label: '伺服器啟動', Icon: Power,        color: 'text-gray-500 bg-gray-100' },
     login_fail:      { label: '登入失敗', Icon: AlertTriangle,  color: 'text-yellow-600 bg-yellow-50' },
+    line_bind:       { label: 'LINE 綁定', Icon: Link2,         color: 'text-green-600 bg-green-50' },
   };
   const severityBorder: Record<AdminEvent['severity'], string> = {
     info: 'border-l-blue-400',

@@ -122,7 +122,7 @@ const addLog = (msg: string) => {
 // ── 結構化事件紀錄（管理室顯示用）──
 interface AdminEvent {
   id: string;
-  type: 'role_change' | 'property_status' | 'property_delete' | 'rate_limit' | 'server_error' | 'server_start' | 'login_fail';
+  type: 'role_change' | 'property_status' | 'property_delete' | 'rate_limit' | 'server_error' | 'server_start' | 'login_fail' | 'line_bind';
   severity: 'info' | 'warning' | 'error';
   actor: string;   // 操作者 email 或 'system'
   target: string;  // 被操作的對象
@@ -840,6 +840,121 @@ if (process.env.NODE_ENV !== 'production') {
     res.sendFile(path.join(distPath, 'index.html'));
   });
 }
+
+// ──────────────────────────────────────────────────
+// LINE LOGIN OAUTH — 自動綁定平台帳號
+// 不需要用戶手動輸入 LINE User ID
+// 需要 .env：LINE_LOGIN_CHANNEL_ID / LINE_LOGIN_CHANNEL_SECRET / SERVER_URL
+// ──────────────────────────────────────────────────
+
+// CSRF 防護：state → { userId, expiresAt }，10 分鐘有效
+const lineLoginState = new Map<string, { userId: string; expiresAt: number }>();
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of lineLoginState) { if (v.expiresAt < now) lineLoginState.delete(k); }
+}, 5 * 60 * 1000);
+
+// Step 1：前端呼叫此端點取得 LINE Login 授權 URL
+app.get('/api/auth/line/start', apiLimiter, async (req: any, res: any) => {
+  const token = req.headers['authorization']?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: '未授權' });
+  const authUser = await verifyToken(token);
+  if (!authUser) return res.status(401).json({ error: 'Token 無效' });
+
+  const channelId = process.env.LINE_LOGIN_CHANNEL_ID;
+  const serverUrl = process.env.SERVER_URL;
+  if (!channelId || !serverUrl) {
+    return res.status(503).json({ error: 'LINE Login 尚未設定，請在 .env 加入 LINE_LOGIN_CHANNEL_ID / LINE_LOGIN_CHANNEL_SECRET / SERVER_URL' });
+  }
+
+  // 產生隨機 state，綁定此 user，防止 CSRF
+  const state = `${authUser.id}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  lineLoginState.set(state, { userId: authUser.id, expiresAt: Date.now() + 10 * 60 * 1000 });
+
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: channelId,
+    redirect_uri: `${serverUrl}/api/auth/line/callback`,
+    state,
+    scope: 'profile',
+  });
+
+  res.json({ url: `https://access.line.me/oauth2/v2.1/authorize?${params}` });
+});
+
+// Step 2：LINE 導回此 callback，取得 LINE userId 並寫入 DB
+app.get('/api/auth/line/callback', async (req: any, res: any) => {
+  const { code, state, error: oauthError } = req.query as Record<string, string>;
+
+  if (oauthError || !code || !state) {
+    addLog(`[LINE-LOGIN] User cancelled or error: ${oauthError}`);
+    return res.redirect('/profile?line_bind=cancelled');
+  }
+
+  const stateData = lineLoginState.get(state);
+  if (!stateData || stateData.expiresAt < Date.now()) {
+    addLog(`[LINE-LOGIN] Invalid or expired state: ${state}`);
+    return res.redirect('/profile?line_bind=error&reason=expired');
+  }
+  lineLoginState.delete(state); // 一次性使用
+
+  try {
+    const channelId     = process.env.LINE_LOGIN_CHANNEL_ID!;
+    const channelSecret = process.env.LINE_LOGIN_CHANNEL_SECRET!;
+    const serverUrl     = process.env.SERVER_URL!;
+
+    // 用授權碼換 access token
+    const tokenRes = await fetch('https://api.line.me/oauth2/v2.1/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: `${serverUrl}/api/auth/line/callback`,
+        client_id: channelId,
+        client_secret: channelSecret,
+      }),
+    });
+    const tokenData = await tokenRes.json() as any;
+    if (!tokenData.access_token) {
+      addLog(`[LINE-LOGIN] Token exchange failed: ${JSON.stringify(tokenData)}`);
+      return res.redirect('/profile?line_bind=error&reason=token');
+    }
+
+    // 用 access token 取得 LINE 個人資料（含 userId）
+    const profileRes = await fetch('https://api.line.me/v2/profile', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    const profile = await profileRes.json() as any;
+    if (!profile.userId) {
+      return res.redirect('/profile?line_bind=error&reason=profile');
+    }
+
+    // 寫入 DB（line_user_id 欄位）
+    const { error: dbErr } = await supabase.from('users')
+      .update({ line_user_id: profile.userId })
+      .eq('id', stateData.userId);
+
+    if (dbErr) {
+      addLog(`[LINE-LOGIN] DB write failed: ${dbErr.message}`);
+      return res.redirect('/profile?line_bind=error&reason=db');
+    }
+
+    addLog(`[LINE-LOGIN] ✅ Bound ${profile.userId} (${profile.displayName}) → platform user ${stateData.userId}`);
+    addEvent({
+      type: 'line_bind',
+      severity: 'info',
+      actor: stateData.userId,
+      target: profile.displayName || profile.userId,
+      detail: `LINE 帳號自動綁定成功 (${profile.userId})`,
+    });
+
+    res.redirect('/profile?line_bind=success');
+  } catch (e: any) {
+    addLog(`[LINE-LOGIN] Unexpected error: ${e.message}`);
+    res.redirect('/profile?line_bind=error&reason=server');
+  }
+});
 
 // ── 全局 Express 錯誤處理（捕獲所有未處理的 500）──
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

@@ -1,19 +1,92 @@
 import { useState, useEffect } from 'react';
 import { useFirebase } from '../context/SupabaseContext';
 import { supabase } from '../supabase';
-import { Calendar, MessageSquare, Heart, ChevronRight, Clock, CheckCircle2, XCircle, CheckCircle, User } from 'lucide-react';
+import { Calendar, MessageSquare, Heart, ChevronRight, Clock, CheckCircle2, XCircle, CheckCircle, User, Settings, Link2, Loader2, Unlink, ExternalLink, AlertCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 
 interface Booking { id: string; propertyTitle: string; propertyId: string; userName?: string; date: string; time: string; status: 'pending' | 'confirmed' | 'cancelled'; createdAt: string; }
 interface Message { id: string; propertyTitle: string; propertyId: string; senderName?: string; content: string; isRead: boolean; createdAt: string; }
 
 export default function Profile() {
   const { user, userRole, isAuthReady, favorites, properties } = useFirebase();
-  const [activeTab, setActiveTab] = useState<'bookings' | 'messages' | 'favorites'>('bookings');
+  const [activeTab, setActiveTab] = useState<'bookings' | 'messages' | 'favorites' | 'settings'>('bookings');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [lineUserId, setLineUserId] = useState('');
+  const [lineDisplayName, setLineDisplayName] = useState('');
+  const [bindingLine, setBindingLine] = useState(false);
+  const [bindMsg, setBindMsg] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
   const isAdmin = userRole === 'admin';
+  const isAgent = userRole === 'agent';
+  const canBindLine = isAdmin || isAgent;
+
+  // 載入現有 LINE 綁定狀態
+  useEffect(() => {
+    if (!user || !canBindLine) return;
+    supabase.from('users').select('line_user_id, display_name').eq('id', user.id).single()
+      .then(({ data }) => {
+        if (data?.line_user_id) setLineUserId(data.line_user_id);
+      });
+  }, [user, canBindLine]);
+
+  // OAuth callback 結果：讀取 URL query param
+  useEffect(() => {
+    const result = searchParams.get('line_bind');
+    if (!result) return;
+    if (result === 'success') {
+      setBindMsg({ type: 'success', text: '✅ LINE 帳號已成功綁定！透過 LINE Bot 上傳的房源將自動歸到你帳號下。' });
+      setActiveTab('settings');
+      // 重新載入綁定狀態
+      if (user) {
+        supabase.from('users').select('line_user_id').eq('id', user.id).single()
+          .then(({ data }) => { if (data?.line_user_id) setLineUserId(data.line_user_id); });
+      }
+    } else if (result === 'cancelled') {
+      setBindMsg({ type: 'info', text: '已取消 LINE 綁定。' });
+    } else {
+      const reason = searchParams.get('reason');
+      const reasonMap: Record<string, string> = {
+        expired: 'state 已過期，請重試',
+        token: '授權碼交換失敗',
+        profile: '無法取得 LINE 個人資料',
+        db: '儲存失敗，請聯繫管理員',
+        server: '伺服器錯誤',
+      };
+      setBindMsg({ type: 'error', text: `❌ 綁定失敗：${reasonMap[reason || ''] || '未知錯誤'}` });
+    }
+    // 清除 URL 的 query params（避免重整又觸發）
+    setSearchParams({}, { replace: true });
+  }, []);
+
+  // 點擊「一鍵綁定 LINE」：向後端取得 OAuth URL 後跳轉
+  const handleBindLine = async () => {
+    if (!user) return;
+    setBindingLine(true);
+    setBindMsg(null);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setBindingLine(false); return; }
+    const res = await fetch('/api/auth/line/start', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setBindMsg({ type: 'error', text: data.error || '無法啟動 LINE 綁定' });
+      setBindingLine(false);
+      return;
+    }
+    // 跳轉到 LINE Login 授權頁
+    window.location.href = data.url;
+  };
+
+  const handleUnbindLine = async () => {
+    if (!user || !window.confirm('確定要解除 LINE 綁定嗎？')) return;
+    await supabase.from('users').update({ line_user_id: null }).eq('id', user.id);
+    setLineUserId('');
+    setLineDisplayName('');
+    setBindMsg({ type: 'info', text: '已解除 LINE 綁定。' });
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -48,6 +121,7 @@ export default function Profile() {
     { key: 'bookings' as const, label: '預約看房', Icon: Calendar, badge: pendingBookings },
     { key: 'messages' as const, label: '租客訊息', Icon: MessageSquare, badge: unreadMessages },
     { key: 'favorites' as const, label: '收藏清單', Icon: Heart },
+    ...(canBindLine ? [{ key: 'settings' as const, label: '帳號設定', Icon: Settings, badge: 0 }] : []),
   ];
 
   return (
@@ -159,6 +233,82 @@ export default function Profile() {
                     <p className="text-sm text-gray-600 leading-relaxed bg-gray-50 p-4 rounded-2xl">{msg.content}</p>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* 帳號設定 — 綁定 LINE */}
+            {activeTab === 'settings' && canBindLine && (
+              <div className="p-8 space-y-6 max-w-lg">
+
+                {/* 標題 */}
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-green-100 rounded-2xl flex items-center justify-center shrink-0">
+                    <Link2 className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-gray-900">LINE 帳號綁定</h3>
+                    <p className="text-sm text-gray-500">綁定後，透過 LINE Bot 上傳的房源自動歸到你帳號下</p>
+                  </div>
+                </div>
+
+                {/* 操作結果訊息 */}
+                {bindMsg && (
+                  <div className={cn('flex items-start gap-3 p-4 rounded-2xl text-sm font-medium',
+                    bindMsg.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' :
+                    bindMsg.type === 'error'   ? 'bg-red-50 text-red-800 border border-red-200' :
+                                                 'bg-blue-50 text-blue-800 border border-blue-200'
+                  )}>
+                    {bindMsg.type === 'success' ? <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" /> :
+                     bindMsg.type === 'error'   ? <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /> :
+                                                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />}
+                    {bindMsg.text}
+                  </div>
+                )}
+
+                {/* 已綁定 */}
+                {lineUserId ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3 p-4 bg-green-50 rounded-2xl border border-green-200">
+                      <CheckCircle className="w-5 h-5 text-green-600 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-green-700 mb-0.5">已綁定 LINE 帳號</p>
+                        <p className="text-xs text-green-600 font-mono truncate">{lineUserId}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleUnbindLine}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-red-200 text-red-600 text-sm font-bold hover:bg-red-50 transition-all"
+                    >
+                      <Unlink className="w-4 h-4" />
+                      解除綁定
+                    </button>
+                  </div>
+                ) : (
+                  /* 未綁定 — 一鍵授權 */
+                  <div className="space-y-4">
+                    <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 text-sm text-gray-600 leading-relaxed space-y-1">
+                      <p className="font-bold text-gray-800">流程說明</p>
+                      <p>1. 點擊下方按鈕</p>
+                      <p>2. 在 LINE 授權頁面允許存取</p>
+                      <p>3. 自動完成綁定，無需手動輸入</p>
+                    </div>
+
+                    <button
+                      onClick={handleBindLine}
+                      disabled={bindingLine}
+                      className="flex items-center gap-2.5 px-6 py-3.5 rounded-2xl font-bold text-white text-sm transition-all bg-[#06C755] hover:bg-[#05a847] disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                    >
+                      {bindingLine
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : <ExternalLink className="w-4 h-4" />}
+                      {bindingLine ? '跳轉中…' : '一鍵綁定 LINE'}
+                    </button>
+
+                    <p className="text-xs text-gray-400">
+                      需先在 LINE Developers Console 建立 LINE Login 頻道，並在 .env 設定 LINE_LOGIN_CHANNEL_ID / LINE_LOGIN_CHANNEL_SECRET / SERVER_URL
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
