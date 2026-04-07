@@ -683,6 +683,40 @@ app.get('/api/users/:id', apiLimiter, async (req, res) => {
   res.json(data);
 });
 
+// 發送訊息：用 service key 繞過 RLS，前端 anon key 無法直接 insert
+app.post('/api/messages', writeLimiter, async (req: any, res: any) => {
+  const token = req.headers['authorization']?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: '請先登入' });
+
+  const authUser = await verifyToken(token);
+  if (!authUser) return res.status(401).json({ error: 'Token 無效' });
+
+  const { receiver_id, property_id, property_title, content } = req.body;
+  if (!content?.trim() || !property_id) {
+    return res.status(400).json({ error: '缺少必要欄位' });
+  }
+
+  // 取 display_name，fallback 到 email 前綴
+  const { data: userRow } = await supabase.from('users').select('display_name').eq('id', authUser.id).single();
+  const senderName = userRow?.display_name || authUser.email.split('@')[0] || '';
+
+  const { error } = await supabase.from('messages').insert({
+    sender_id: authUser.id,
+    sender_name: senderName,
+    receiver_id: receiver_id || 'admin',
+    property_id,
+    property_title,
+    content: content.trim(),
+    is_read: false,
+  });
+
+  if (error) {
+    console.error('messages insert error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+  res.json({ ok: true });
+});
+
 // 通用屬性更新：owner 或 admin 皆可，用 service key 繞過 RLS
 app.put('/api/properties/:id', writeLimiter, async (req: any, res: any) => {
   const token = req.headers['authorization']?.replace('Bearer ', '');

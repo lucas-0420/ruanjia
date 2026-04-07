@@ -147,24 +147,29 @@ export default function PropertyDetail() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) {
-      alert('請先登入以發送訊息');
-      return;
-    }
+    if (!user) { alert('請先登入以發送訊息'); return; }
     if (!property) return;
 
     setIsSending(true);
     try {
-      const { error } = await supabase.from('messages').insert({
-        sender_id: user.id,
-        sender_name: user.user_metadata?.full_name || '',
-        receiver_id: property.owner.uid || 'admin',
-        property_id: property.id,
-        property_title: property.title,
-        content: messageContent,
-        is_read: false,
+      // 取 JWT token 送給後端（service role key 繞過 RLS）
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('no session');
+
+      const res = await fetch(`${API_BASE}/api/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          receiver_id: property.owner.uid || 'admin',
+          property_id: property.id,
+          property_title: property.title,
+          content: messageContent,
+        }),
       });
-      if (error) throw error;
+      if (!res.ok) throw new Error(await res.text());
       alert('訊息已發送！');
       setShowMessageModal(false);
       setMessageContent('');

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useFirebase } from '../context/SupabaseContext';
 import { supabase } from '../supabase';
+import { API_BASE } from '../lib/api';
 import { Navigate, Link } from 'react-router-dom';
 import { MessageSquare, Send, ChevronLeft, ExternalLink, Home } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -134,27 +135,35 @@ export default function Messages() {
     }
   }, [activeKey, allMsgs]);
 
-  // ── 送出訊息 ───────────────────────────────────────────
+  // ── 送出訊息（走後端 API，service role key 繞過 RLS）─────
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || !user || !activeConv) return;
     setSending(true);
 
-    // 回覆給「對方」
-    const receiverId = activeConv.otherUserId || 'admin';
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('no session');
 
-    const { error } = await supabase.from('messages').insert({
-      sender_id: user.id,
-      sender_name: myName,
-      receiver_id: receiverId,
-      property_id: activeConv.propertyId,
-      property_title: activeConv.propertyTitle,
-      content: input.trim(),
-      is_read: false,
-    });
-
-    if (!error) setInput('');
-    setSending(false);
+      const res = await fetch(`${API_BASE}/api/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          receiver_id: activeConv.otherUserId || 'admin',
+          property_id: activeConv.propertyId,
+          property_title: activeConv.propertyTitle,
+          content: input.trim(),
+        }),
+      });
+      if (res.ok) setInput('');
+    } catch (err) {
+      console.error('send message error:', err);
+    } finally {
+      setSending(false);
+    }
   };
 
   // ── 時間格式化 ─────────────────────────────────────────
