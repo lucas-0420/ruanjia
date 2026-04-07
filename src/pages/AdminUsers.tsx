@@ -1,19 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { useFirebase } from '../context/SupabaseContext';
+import { useFirebase, mapPropertyFromDB } from '../context/SupabaseContext';
 import { supabase } from '../supabase';
-import { Navigate } from 'react-router-dom';
+import { Navigate, Link } from 'react-router-dom';
 import { cn } from '../lib/utils';
-import { Users, Smartphone, ShieldCheck, LayoutDashboard } from 'lucide-react';
+import { Users, Smartphone, ShieldCheck, LayoutDashboard, Home, Edit, Trash2, Loader2, CheckCircle, Archive, Search, X, UserCheck, Building2, Crown } from 'lucide-react';
 import { LineSyncPanel } from './AdminSync';
+import { Property } from '../types';
 
 interface AppUser { id: string; email: string; displayName: string; photoUrl: string; role: string; createdAt: string; }
+interface ConfirmModal { id: string; title: string; nextStatus: 'active' | 'archived'; }
 
-type Tab = 'users' | 'line';
+type Tab = 'users' | 'line' | 'properties';
 
 export default function AdminUsers() {
   const { user, userRole, isAuthReady } = useFirebase();
   const [activeTab, setActiveTab] = useState<Tab>('users');
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
+
+  // 房源管理狀態
+  const [allProperties, setAllProperties] = useState<Property[]>([]);
+  const [propLoading, setPropLoading] = useState(false);
+  const [propFilter, setPropFilter] = useState<'all' | 'active' | 'archived'>('all');
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmModal | null>(null);
+  const [propSearch, setPropSearch] = useState('');
+  const [userSearch, setUserSearch] = useState('');
+
   const isAdmin = userRole === 'admin';
 
   useEffect(() => {
@@ -30,6 +42,25 @@ export default function AdminUsers() {
     fetchUsers();
   }, [isAdmin]);
 
+  // 切換到房源Tab時抓全部房源（走後端 API，service role 可看到下架與 LINE 上架的房源）
+  useEffect(() => {
+    if (activeTab !== 'properties' || !isAdmin) return;
+    const fetchAllProperties = async () => {
+      setPropLoading(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { setPropLoading(false); return; }
+      const res = await fetch('/api/admin/properties', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (res.ok) {
+        const { properties } = await res.json();
+        setAllProperties((properties || []).map(mapPropertyFromDB));
+      }
+      setPropLoading(false);
+    };
+    fetchAllProperties();
+  }, [activeTab, isAdmin]);
+
   if (isAuthReady && !isAdmin) return <Navigate to="/" />;
 
   const handleRoleChange = async (id: string, role: string) => {
@@ -43,16 +74,97 @@ export default function AdminUsers() {
     setAppUsers(prev => prev.map(u => u.id === id ? { ...u, role } : u));
   };
 
+  const handleStatusChange = (id: string, title: string, next: 'active' | 'archived') => {
+    setConfirm({ id, title, nextStatus: next });
+  };
+
+  const applyStatusChange = async () => {
+    if (!confirm) return;
+    setSavingId(confirm.id);
+    setConfirm(null);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      await fetch(`/api/properties/${confirm.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ status: confirm.nextStatus }),
+      });
+    }
+    setAllProperties(prev =>
+      prev.map(p => p.id === confirm.id ? { ...p, status: confirm.nextStatus } as any : p)
+    );
+    setSavingId(null);
+  };
+
+  const handleDelete = async (id: string, title: string) => {
+    if (!window.confirm(`確定要刪除「${title}」嗎？此操作無法復原。`)) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const res = await fetch(`/api/properties/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+    if (res.ok) setAllProperties(prev => prev.filter(p => p.id !== id));
+  };
+
   const avatar = user?.user_metadata?.avatar_url || '';
   const name = user?.user_metadata?.full_name || user?.email || '';
 
+  const activeProps = allProperties.filter(p => p.status !== 'archived');
+  const archivedProps = allProperties.filter(p => p.status === 'archived');
+  const byPropFilter = propFilter === 'active' ? activeProps : propFilter === 'archived' ? archivedProps : allProperties;
+  const filteredProps = propSearch.trim()
+    ? byPropFilter.filter(p => `${p.title} ${p.location.city}${p.location.district}`.toLowerCase().includes(propSearch.trim().toLowerCase()))
+    : byPropFilter;
+  const filteredUsers = userSearch.trim()
+    ? appUsers.filter(u => `${u.displayName} ${u.email}`.toLowerCase().includes(userSearch.trim().toLowerCase()))
+    : appUsers;
+
+  // 角色徽章設定
+  const roleConfig: Record<string, { label: string; color: string; Icon: React.ElementType }> = {
+    admin:  { label: '管理員', color: 'bg-gray-900 text-white',              Icon: Crown },
+    agent:  { label: '仲介',   color: 'bg-orange-100 text-orange-700',       Icon: Building2 },
+    user:   { label: '租客',   color: 'bg-blue-50 text-blue-600',            Icon: UserCheck },
+  };
+
+  // 各角色人數統計
+  const roleCounts = {
+    admin: appUsers.filter(u => u.role === 'admin').length,
+    agent: appUsers.filter(u => u.role === 'agent').length,
+    user:  appUsers.filter(u => u.role === 'user').length,
+  };
+
   const navItems = [
     { key: 'users' as Tab, label: '用戶管理', Icon: Users },
+    { key: 'properties' as Tab, label: '房源管理', Icon: Home },
     { key: 'line' as Tab, label: 'LINE 同步', Icon: Smartphone },
   ];
 
   return (
     <div className="min-h-screen bg-gray-50 pt-16">
+
+      {/* Confirm Modal */}
+      {confirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+          <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full">
+            <h3 className="text-lg font-black text-gray-900 mb-2">確認變更狀態</h3>
+            <p className="text-gray-500 text-sm mb-6">
+              將「<span className="font-bold text-gray-900">{confirm.title}</span>」
+              {confirm.nextStatus === 'active' ? '重新上架' : '下架'}？
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirm(null)} className="flex-1 py-3 rounded-2xl border-2 border-gray-100 font-bold text-gray-600 hover:bg-gray-50 transition-all">取消</button>
+              <button
+                onClick={applyStatusChange}
+                className={cn('flex-1 py-3 rounded-2xl font-bold text-white transition-all', confirm.nextStatus === 'active' ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-700 hover:bg-gray-800')}
+              >
+                {confirm.nextStatus === 'active' ? '確認上架' : '確認下架'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 gap-8 py-10">
 
         {/* Sidebar */}
@@ -94,44 +206,178 @@ export default function AdminUsers() {
 
         {/* Main */}
         <div className="flex-1 min-w-0 space-y-6">
-          <div className="flex items-center gap-3">
-            <span className="font-bold text-gray-900">
-              {activeTab === 'users' ? '用戶管理' : 'LINE 訊息同步'}
-            </span>
-          </div>
 
-          {activeTab === 'line' ? (
-            <LineSyncPanel />
-          ) : (
-            <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-              {appUsers.length === 0 ? (
-                <div className="p-20 text-center text-gray-400">目前沒有用戶</div>
-              ) : appUsers.map(u => (
-                <div key={u.id} className="p-5 flex items-center justify-between hover:bg-gray-50 border-b border-gray-50 last:border-0">
-                  <div className="flex items-center gap-4">
-                    <img src={u.photoUrl || ''} alt="" className="w-10 h-10 rounded-full bg-gray-100" />
-                    <div>
-                      <p className="font-bold text-gray-900">{u.displayName || '未命名'}</p>
-                      <p className="text-sm text-gray-400">{u.email}</p>
+          {/* 用戶管理 */}
+          {activeTab === 'users' && (
+            <>
+              {/* 標題列 + 類別統計 + 搜尋 */}
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="font-bold text-gray-900">用戶管理</span>
+                  <span className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{filteredUsers.length}</span>
+                  {/* 角色人數統計徽章 */}
+                  {([
+                    { role: 'admin', cfg: roleConfig.admin },
+                    { role: 'agent', cfg: roleConfig.agent },
+                    { role: 'user',  cfg: roleConfig.user  },
+                  ] as { role: keyof typeof roleCounts; cfg: typeof roleConfig[string] }[]).map(({ role, cfg }) => (
+                    <span key={role} className={cn('flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full', cfg.color)}>
+                      <cfg.Icon className="w-3 h-3" />
+                      {cfg.label} {roleCounts[role]}
+                    </span>
+                  ))}
+                </div>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input type="text" value={userSearch} onChange={e => setUserSearch(e.target.value)} placeholder="搜尋用戶..." className="pl-9 pr-8 py-2 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:border-orange-400 w-48" />
+                  {userSearch && <button onClick={() => setUserSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X className="w-3.5 h-3.5" /></button>}
+                </div>
+              </div>
+
+              <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+                {filteredUsers.length === 0 ? (
+                  <div className="p-20 text-center text-gray-400">目前沒有用戶</div>
+                ) : filteredUsers.map(u => {
+                  const rc = roleConfig[u.role] || roleConfig.user;
+                  return (
+                    <div key={u.id} className="px-6 py-4 flex items-center gap-4 hover:bg-gray-50 border-b border-gray-50 last:border-0">
+                      {/* 頭像 */}
+                      {u.photoUrl ? (
+                        <img src={u.photoUrl} alt="" className="w-10 h-10 rounded-full bg-gray-100 shrink-0 object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-gray-100 shrink-0 flex items-center justify-center text-gray-400 font-bold text-sm">
+                          {(u.displayName || u.email || '?')[0].toUpperCase()}
+                        </div>
+                      )}
+
+                      {/* 姓名 + email */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-bold text-gray-900 truncate">{u.displayName || '未命名'}</p>
+                          {/* 角色徽章（顯示用，一目了然） */}
+                          <span className={cn('flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full shrink-0', rc.color)}>
+                            <rc.Icon className="w-3 h-3" />
+                            {rc.label}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-400 truncate">{u.email}</p>
+                      </div>
+
+                      {/* 加入時間 */}
+                      <span className="text-xs text-gray-300 shrink-0 hidden sm:block">
+                        {new Date(u.createdAt).toLocaleDateString('zh-TW')}
+                      </span>
+
+                      {/* 更改角色下拉 */}
+                      <select
+                        value={u.role}
+                        onChange={e => handleRoleChange(u.id, e.target.value)}
+                        className={cn(
+                          'shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer focus:outline-none transition-all',
+                          u.role === 'admin' ? 'bg-gray-900 text-white border-gray-900' :
+                          u.role === 'agent' ? 'bg-orange-50 text-orange-600 border-orange-200' :
+                          'bg-gray-50 text-gray-500 border-gray-200'
+                        )}
+                      >
+                        <option value="user">租客</option>
+                        <option value="agent">仲介</option>
+                        <option value="admin">管理員</option>
+                      </select>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {/* 房源管理 - 平台全部房源 */}
+          {activeTab === 'properties' && (
+            <>
+              <div className="flex items-center gap-3 flex-wrap justify-between">
+                <div className="flex items-center gap-3 flex-wrap">
+                <span className="font-bold text-gray-900">平台所有房源</span>
+                {/* 篩選按鈕 */}
+                {[
+                  { key: 'all' as const, label: '全部', icon: Home, color: 'text-blue-600 bg-blue-50', count: allProperties.length },
+                  { key: 'active' as const, label: '上架中', icon: CheckCircle, color: 'text-green-600 bg-green-50', count: activeProps.length },
+                  { key: 'archived' as const, label: '已下架', icon: Archive, color: 'text-gray-500 bg-gray-100', count: archivedProps.length },
+                ].map(s => (
+                  <button
+                    key={s.key}
+                    onClick={() => setPropFilter(f => f === s.key ? 'all' : s.key)}
+                    className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border', propFilter === s.key ? 'bg-orange-50 border-orange-200 text-orange-700' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300')}
+                  >
+                    <s.icon className="w-3.5 h-3.5" />
+                    {s.label} ({s.count})
+                  </button>
+                ))}
+                </div>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input type="text" value={propSearch} onChange={e => setPropSearch(e.target.value)} placeholder="搜尋房源..." className="pl-9 pr-8 py-2 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:border-orange-400 w-48" />
+                  {propSearch && <button onClick={() => setPropSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X className="w-3.5 h-3.5" /></button>}
+                </div>
+              </div>
+
+              <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+                {propLoading ? (
+                  <div className="flex items-center justify-center py-20">
+                    <Loader2 className="w-8 h-8 animate-spin text-orange-600" />
+                  </div>
+                ) : filteredProps.length === 0 ? (
+                  <div className="p-20 text-center text-gray-400">沒有房源</div>
+                ) : filteredProps.map(prop => (
+                  <div key={prop.id} className={cn('flex items-center gap-4 px-6 py-4 hover:bg-gray-50/70 transition-colors border-b border-gray-50 last:border-0', prop.status === 'archived' && 'opacity-60')}>
+                    <Link to={`/property/${prop.id}`} className="w-20 h-14 rounded-xl overflow-hidden shrink-0 bg-gray-100 hover:opacity-80 transition-opacity">
+                      <img src={prop.images[0]} alt={prop.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    </Link>
+                    <div className="flex-1 min-w-0">
+                      <Link to={`/property/${prop.id}`} className="font-bold text-gray-900 truncate block hover:text-orange-600 transition-colors">{prop.title}</Link>
+                      <p className="text-sm text-gray-500 truncate mt-0.5">{prop.location.city}{prop.location.district} · NT${prop.price.toLocaleString()} / 月</p>
+                    </div>
+                    <div className="shrink-0">
+                      {savingId === prop.id ? (
+                        <div className="w-28 h-9 flex items-center justify-center">
+                          <Loader2 className="w-4 h-4 animate-spin text-orange-600" />
+                        </div>
+                      ) : (
+                        <select
+                          value={prop.status || 'active'}
+                          onChange={e => handleStatusChange(prop.id, prop.title, e.target.value as 'active' | 'archived')}
+                          className={cn(
+                            'text-xs font-bold px-3 py-2 rounded-xl border-2 appearance-none cursor-pointer focus:outline-none transition-all',
+                            prop.status === 'archived'
+                              ? 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-400'
+                              : 'border-green-200 bg-green-50 text-green-700 hover:border-green-400'
+                          )}
+                        >
+                          <option value="active">✓ 上架中</option>
+                          <option value="archived">✕ 已下架</option>
+                        </select>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Link to={`/admin/edit/${prop.id}`} className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-400 transition-all">
+                        <Edit className="w-4 h-4" />
+                      </Link>
+                      <button onClick={() => handleDelete(prop.id, prop.title)} className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400 hover:text-red-600 hover:border-red-400 transition-all">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
-                  <select
-                    value={u.role}
-                    onChange={e => handleRoleChange(u.id, e.target.value)}
-                    className={cn(
-                      'px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer',
-                      u.role === 'admin' ? 'bg-gray-900 text-white border-gray-900' :
-                      u.role === 'agent' ? 'bg-orange-50 text-orange-600 border-orange-200' :
-                      'bg-gray-50 text-gray-500 border-gray-200'
-                    )}
-                  >
-                    <option value="user">租客</option>
-                    <option value="agent">仲介</option>
-                    <option value="admin">管理員</option>
-                  </select>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* LINE 同步 */}
+          {activeTab === 'line' && (
+            <>
+              <div className="flex items-center gap-3">
+                <span className="font-bold text-gray-900">LINE 訊息同步</span>
+              </div>
+              <LineSyncPanel />
+            </>
           )}
         </div>
       </div>
