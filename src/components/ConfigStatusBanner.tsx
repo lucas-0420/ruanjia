@@ -1,3 +1,4 @@
+import { API_BASE } from '../lib/api';
 import { useState, useEffect } from 'react';
 import { AlertCircle, ChevronRight, Settings, Key } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -14,7 +15,7 @@ export default function ConfigStatusBanner() {
   useEffect(() => {
     const fetchStatus = async () => {
       try {
-        const response = await fetch('/api/config-status');
+        const response = await fetch(API_BASE + '/api/config-status');
         const contentType = response.headers.get('content-type');
         
         if (response.ok && contentType && contentType.includes('application/json')) {

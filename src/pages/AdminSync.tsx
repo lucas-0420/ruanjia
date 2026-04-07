@@ -1,3 +1,4 @@
+import { API_BASE } from '../lib/api';
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { useFirebase } from '../context/SupabaseContext';
@@ -53,7 +54,7 @@ export function LineSyncPanel() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      const response = await fetch('/api/admin/logs', { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      const response = await fetch(API_BASE + '/api/admin/logs', { headers: token ? { Authorization: `Bearer ${token}` } : {} });
       const data = await response.json();
       setLogs(data.logs || []);
     } catch (_) {}

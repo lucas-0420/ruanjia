@@ -1,3 +1,4 @@
+import { API_BASE } from '../lib/api';
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useFirebase } from '../context/SupabaseContext';
@@ -19,48 +20,7 @@ export default function PostProperty() {
   const isEditing = !!id;
   const location = useLocation();
 
-  useEffect(() => {
-    if (isAuthReady && user && userRole !== 'agent' && userRole !== 'admin') {
-      navigate('/');
-    }
-  }, [isAuthReady, user, userRole]);
-
-  useEffect(() => {
-    if (location.state?.prefill) {
-      const prefill = location.state.prefill;
-      setFormData(prev => ({
-        ...prev,
-        title: prefill.title || prev.title,
-        price: prefill.price?.toString() || prev.price,
-        type: prefill.type || prev.type,
-        city: prefill.city || prev.city,
-        district: prefill.district || prev.district,
-        address: prefill.address || prev.address,
-        bedrooms: prefill.bedrooms?.toString() || prev.bedrooms,
-        bathrooms: prefill.bathrooms?.toString() || prev.bathrooms,
-        area: prefill.area?.toString() || prev.area,
-        description: prefill.description || prev.description,
-      }));
-    }
-  }, [location.state]);
-
-  if (isAuthReady && !user) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center bg-gray-50">
-        <div className="w-20 h-20 bg-orange-100 rounded-[32px] flex items-center justify-center mb-6">
-          <ShieldCheck className="w-10 h-10 text-orange-600" />
-        </div>
-        <h1 className="text-3xl font-bold text-gray-900 mb-4">請先登入</h1>
-        <p className="text-gray-500 mb-8 max-w-md">您需要登入帳戶才能刊登或編輯房源資訊。</p>
-        <button 
-          onClick={login}
-          className="bg-gray-900 text-white px-10 py-4 rounded-2xl font-bold hover:bg-gray-800 transition-all"
-        >
-          立即登入
-        </button>
-      </div>
-    );
-  }
+  // ── 所有 hooks 必須在任何 conditional return 之前宣告 ──
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [errors, setErrors] = React.useState<Record<string, string>>({});
@@ -76,7 +36,6 @@ export default function PostProperty() {
   const [aiInput, setAiInput] = useState('');
   const [showAiModal, setShowAiModal] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-
 
   const [formData, setFormData] = useState({
     title: '',
@@ -102,6 +61,33 @@ export default function PostProperty() {
     ownerPhone: '',
     ownerLineId: '',
   });
+
+  // 非仲介/管理員導回首頁
+  useEffect(() => {
+    if (isAuthReady && user && userRole !== 'agent' && userRole !== 'admin') {
+      navigate('/');
+    }
+  }, [isAuthReady, user, userRole]);
+
+  // LINE 同步預填資料
+  useEffect(() => {
+    if (location.state?.prefill) {
+      const prefill = location.state.prefill;
+      setFormData(prev => ({
+        ...prev,
+        title: prefill.title || prev.title,
+        price: prefill.price?.toString() || prev.price,
+        type: prefill.type || prev.type,
+        city: prefill.city || prev.city,
+        district: prefill.district || prev.district,
+        address: prefill.address || prev.address,
+        bedrooms: prefill.bedrooms?.toString() || prev.bedrooms,
+        bathrooms: prefill.bathrooms?.toString() || prev.bathrooms,
+        area: prefill.area?.toString() || prev.area,
+        description: prefill.description || prev.description,
+      }));
+    }
+  }, [location.state]);
 
   useEffect(() => {
     if (id) {
@@ -150,6 +136,25 @@ export default function PostProperty() {
     }
   }, [id]);
 
+  // conditional return 放在所有 hooks 之後
+  if (isAuthReady && !user) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center bg-gray-50">
+        <div className="w-20 h-20 bg-orange-100 rounded-[32px] flex items-center justify-center mb-6">
+          <ShieldCheck className="w-10 h-10 text-orange-600" />
+        </div>
+        <h1 className="text-3xl font-bold text-gray-900 mb-4">請先登入</h1>
+        <p className="text-gray-500 mb-8 max-w-md">您需要登入帳戶才能刊登或編輯房源資訊。</p>
+        <button
+          onClick={login}
+          className="bg-gray-900 text-white px-10 py-4 rounded-2xl font-bold hover:bg-gray-800 transition-all"
+        >
+          立即登入
+        </button>
+      </div>
+    );
+  }
+
   const handleAiAutoFill = async () => {
     if (!aiInput.trim()) return;
     setIsAiProcessing(true);
@@ -180,7 +185,7 @@ export default function PostProperty() {
       
       注意：只回傳 JSON 字串，不要有其他文字。`;
 
-      const res = await fetch('/api/ai/autofill', {
+      const res = await fetch(API_BASE + '/api/ai/autofill', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: truncatedInput }),
@@ -218,7 +223,7 @@ export default function PostProperty() {
       
       請強調生活機能、交通便利性及房屋優點。語氣要專業且溫馨。`;
 
-      const res = await fetch('/api/ai/description', {
+      const res = await fetch(API_BASE + '/api/ai/description', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ formData }),
@@ -244,7 +249,7 @@ export default function PostProperty() {
       
       請只回傳標籤列表，用逗號分隔。不要有其他文字。`;
 
-      const res = await fetch('/api/ai/tags', {
+      const res = await fetch(API_BASE + '/api/ai/tags', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ description: truncatedDesc }),
@@ -289,7 +294,7 @@ export default function PostProperty() {
     setUploadingCount(files.length);
     try {
       const urls = await Promise.all(files.map(async file => {
-        const res = await fetch('/api/upload/image', {
+        const res = await fetch(API_BASE + '/api/upload/image', {
           method: 'POST',
           headers: { 'Content-Type': file.type, Authorization: `Bearer ${session.access_token}` },
           body: file,
@@ -317,7 +322,7 @@ export default function PostProperty() {
     if (!session) { alert('未登入'); return; }
     setUploadingVideo(true);
     try {
-      const res = await fetch('/api/upload/image', {
+      const res = await fetch(API_BASE + '/api/upload/image', {
         method: 'POST',
         headers: { 'Content-Type': file.type, Authorization: `Bearer ${session.access_token}` },
         body: file,
@@ -416,7 +421,7 @@ export default function PostProperty() {
           // 走 server API（service role key，繞過 RLS），支援 owner 及 admin 編輯
           const session = await supabase.auth.getSession();
           const token = session.data.session?.access_token;
-          const res = await fetch(`/api/properties/${id}`, {
+          const res = await fetch(`${API_BASE}/api/properties/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify(data),

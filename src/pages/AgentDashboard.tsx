@@ -1,10 +1,11 @@
+import { API_BASE } from '../lib/api';
 import React, { useState, useEffect } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useFirebase, mapPropertyFromDB } from '../context/SupabaseContext';
 import { supabase } from '../supabase';
 import {
   Building2, Plus, Edit, Trash2, TrendingUp,
-  Home, CheckCircle, Archive, Loader2, LayoutDashboard, LogOut
+  Home, CheckCircle, Archive, Loader2, LayoutDashboard, LogOut, Search, X
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Property } from '../types';
@@ -22,6 +23,7 @@ export default function AgentDashboard() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<ConfirmModal | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'archived'>('all');
+  const [search, setSearch] = useState('');
 
   const canAccess = userRole === 'agent' || userRole === 'admin';
 
@@ -51,7 +53,14 @@ export default function AgentDashboard() {
     if (!confirm) return;
     setSavingId(confirm.id);
     setConfirm(null);
-    await supabase.from('properties').update({ status: confirm.nextStatus }).eq('id', confirm.id);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      await fetch(`${API_BASE}/api/properties/${confirm.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ status: confirm.nextStatus }),
+      });
+    }
     setProperties(prev =>
       prev.map(p => p.id === confirm.id ? { ...p, status: confirm.nextStatus } as any : p)
     );
@@ -60,13 +69,21 @@ export default function AgentDashboard() {
 
   const handleDelete = async (id: string, title: string) => {
     if (!window.confirm(`確定要刪除「${title}」嗎？此操作無法復原。`)) return;
-    await supabase.from('properties').delete().eq('id', id);
-    setProperties(prev => prev.filter(p => p.id !== id));
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const res = await fetch(`${API_BASE}/api/properties/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+    if (res.ok) setProperties(prev => prev.filter(p => p.id !== id));
   };
 
-  const active = properties.filter(p => (p as any).status !== 'archived');
-  const archived = properties.filter(p => (p as any).status === 'archived');
-  const filtered = filter === 'active' ? active : filter === 'archived' ? archived : properties;
+  const active = properties.filter(p => p.status !== 'archived');
+  const archived = properties.filter(p => p.status === 'archived');
+  const byFilter = filter === 'active' ? active : filter === 'archived' ? archived : properties;
+  const filtered = search.trim()
+    ? byFilter.filter(p => `${p.title} ${p.location.city}${p.location.district}`.toLowerCase().includes(search.trim().toLowerCase()))
+    : byFilter;
   const name = user?.user_metadata?.full_name || user?.email || '仲介';
   const avatar = user?.user_metadata?.avatar_url || '';
 
@@ -199,13 +216,26 @@ export default function AgentDashboard() {
                 <button onClick={() => setFilter('all')} className="text-xs text-orange-600 hover:underline font-medium">清除篩選</button>
               )}
             </div>
-            <Link
-              to="/post"
-              className="flex items-center gap-2 bg-orange-600 text-white px-5 py-2.5 rounded-2xl text-sm font-bold hover:bg-orange-700 transition-all shadow-lg shadow-orange-100"
-            >
-              <Plus className="w-4 h-4" />
-              刊登新房源
-            </Link>
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="搜尋房源..."
+                  className="pl-9 pr-8 py-2 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:border-orange-400 w-48"
+                />
+                {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X className="w-3.5 h-3.5" /></button>}
+              </div>
+              <Link
+                to="/post"
+                className="flex items-center gap-2 bg-orange-600 text-white px-5 py-2.5 rounded-2xl text-sm font-bold hover:bg-orange-700 transition-all shadow-lg shadow-orange-100"
+              >
+                <Plus className="w-4 h-4" />
+                刊登新房源
+              </Link>
+            </div>
           </div>
 
           {/* Property List */}
@@ -237,7 +267,7 @@ export default function AgentDashboard() {
             ) : (
               <div className="divide-y divide-gray-50">
                 {filtered.map(property => {
-                  const isArchived = (property as any).status === 'archived';
+                  const isArchived = property.status === 'archived';
                   const isSaving = savingId === property.id;
                   return (
                     <div
@@ -275,7 +305,7 @@ export default function AgentDashboard() {
                           </div>
                         ) : (
                           <select
-                            value={(property as any).status || 'active'}
+                            value={property.status || 'active'}
                             onChange={e => handleStatusChange(property.id, property.title, e.target.value as 'active' | 'archived')}
                             className={cn(
                               'text-xs font-bold px-3 py-2 rounded-xl border-2 appearance-none cursor-pointer focus:outline-none transition-all',

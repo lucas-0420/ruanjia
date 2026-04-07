@@ -1,3 +1,4 @@
+import { API_BASE } from '../lib/api';
 import React from 'react';
 import { Sparkles, Send, X, MessageSquare, Loader2 } from 'lucide-react';
 import { Property } from '../types';
@@ -30,7 +31,7 @@ export default function AIAssistant({ property }: AIAssistantProps) {
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/ai/chat', {
+      const response = await fetch(API_BASE + '/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

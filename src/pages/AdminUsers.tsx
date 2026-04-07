@@ -1,3 +1,4 @@
+import { API_BASE } from '../lib/api';
 import React, { useState, useEffect } from 'react';
 import { useFirebase, mapPropertyFromDB } from '../context/SupabaseContext';
 import { supabase } from '../supabase';
@@ -47,7 +48,7 @@ export default function AdminUsers() {
     const fetchUsers = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-      const res = await fetch('/api/admin/users', { headers: { Authorization: `Bearer ${session.access_token}` } });
+      const res = await fetch(API_BASE + '/api/admin/users', { headers: { Authorization: `Bearer ${session.access_token}` } });
       if (res.ok) {
         const { users } = await res.json();
         setAppUsers((users || []).map((r: any) => ({ id: r.id, email: r.email, displayName: r.display_name, photoUrl: r.photo_url, role: r.role || 'user', createdAt: r.created_at })));
@@ -61,7 +62,7 @@ export default function AdminUsers() {
     setEventsLoading(true);
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { setEventsLoading(false); return; }
-    const res = await fetch('/api/admin/events', { headers: { Authorization: `Bearer ${session.access_token}` } });
+    const res = await fetch(API_BASE + '/api/admin/events', { headers: { Authorization: `Bearer ${session.access_token}` } });
     if (res.ok) {
       const { events: data } = await res.json();
       setEvents(data || []);
@@ -84,7 +85,7 @@ export default function AdminUsers() {
       setPropLoading(true);
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { setPropLoading(false); return; }
-      const res = await fetch('/api/admin/properties', {
+      const res = await fetch(API_BASE + '/api/admin/properties', {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
       if (res.ok) {
@@ -101,7 +102,7 @@ export default function AdminUsers() {
   const handleRoleChange = async (id: string, role: string) => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
-    await fetch(`/api/admin/users/${id}/role`, {
+    await fetch(`${API_BASE}/api/admin/users/${id}/role`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
       body: JSON.stringify({ role }),
@@ -119,7 +120,7 @@ export default function AdminUsers() {
     setConfirm(null);
     const { data: { session } } = await supabase.auth.getSession();
     if (session) {
-      await fetch(`/api/properties/${confirm.id}`, {
+      await fetch(`${API_BASE}/api/properties/${confirm.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ status: confirm.nextStatus }),
@@ -135,7 +136,7 @@ export default function AdminUsers() {
     if (!window.confirm(`確定要刪除「${title}」嗎？此操作無法復原。`)) return;
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
-    const res = await fetch(`/api/properties/${id}`, {
+    const res = await fetch(`${API_BASE}/api/properties/${id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${session.access_token}` },
     });

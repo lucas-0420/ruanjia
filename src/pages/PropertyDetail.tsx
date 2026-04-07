@@ -1,3 +1,4 @@
+import { API_BASE } from '../lib/api';
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
@@ -44,7 +45,7 @@ export default function PropertyDetail() {
           // 取得真實屋主資訊（透過 server API 繞過 RLS）
           if (row.owner_id) {
             try {
-              const res = await fetch(`/api/users/${row.owner_id}`);
+              const res = await fetch(`${API_BASE}/api/users/${row.owner_id}`);
               if (res.ok) {
                 const ownerRow = await res.json();
                 propData.owner = {
@@ -467,7 +468,9 @@ export default function PropertyDetail() {
                 {(property.owner.lineId || property.owner.phone) && (
                   <a
                     href={property.owner.lineId
-                      ? `https://line.me/ti/p/~${property.owner.lineId.replace(/^@/, '')}`
+                      ? property.owner.lineId!.startsWith('U')
+                          ? `https://line.me/ti/p/${property.owner.lineId}`
+                          : `https://line.me/ti/p/~${property.owner.lineId!.replace(/^@/, '')}`
                       : `https://line.me/ti/p/+886${property.owner.phone!.replace(/^0/, '')}`}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -594,7 +597,9 @@ export default function PropertyDetail() {
             {(property.owner.lineId || property.owner.phone) && (
               <a
                 href={property.owner.lineId
-                  ? `https://line.me/ti/p/~${property.owner.lineId.replace(/^@/, '')}`
+                  ? property.owner.lineId!.startsWith('U')
+                          ? `https://line.me/ti/p/${property.owner.lineId}`
+                          : `https://line.me/ti/p/~${property.owner.lineId!.replace(/^@/, '')}`
                   : `https://line.me/ti/p/+886${property.owner.phone!.replace(/^0/, '')}`}
                 target="_blank"
                 rel="noopener noreferrer"

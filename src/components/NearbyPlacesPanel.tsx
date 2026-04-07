@@ -1,3 +1,4 @@
+import { API_BASE } from '../lib/api';
 import React, { useEffect, useRef, useState } from 'react';
 import { cn } from '../lib/utils';
 
@@ -62,7 +63,7 @@ const CATEGORIES = [
 /* ── 透過 server 代理呼叫 Places Nearby Search ── */
 async function fetchNearby(lat: number, lng: number, type: string): Promise<Place[]> {
   const params = new URLSearchParams({ lat: String(lat), lng: String(lng), type, radius: '2000' });
-  const res = await fetch(`/api/nearby?${params}`);
+  const res = await fetch(`${API_BASE}/api/nearby?${params}`);
   if (!res.ok) return [];
   const data = await res.json();
   return (data.results || [])

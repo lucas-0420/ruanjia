@@ -10,6 +10,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import crypto from 'crypto';
+import cors from 'cors';
 
 dotenv.config();
 
@@ -57,6 +58,22 @@ async function notifyAdmin(message: string, key = 'general') {
 
 const app = express();
 const PORT = 3000;
+
+// ── CORS：允許 Vercel 前端跨域呼叫 ──
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  process.env.VITE_FRONTEND_URL || '',  // Vercel 部署網址
+].filter(Boolean);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // 允許無 origin（server-to-server、LINE webhook）或在白名單內
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error(`CORS blocked: ${origin}`));
+  },
+  credentials: true,
+}));
 
 // ── 資安：HTTP 安全標頭（防 XSS / clickjacking / MIME 嗅探等）──
 app.use(helmet({

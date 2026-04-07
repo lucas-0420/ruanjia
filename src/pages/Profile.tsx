@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useFirebase } from '../context/SupabaseContext';
 import { supabase } from '../supabase';
 import { Calendar, MessageSquare, Heart, ChevronRight, Clock, CheckCircle2, XCircle, CheckCircle, User, Settings, Link2, Unlink, AlertCircle } from 'lucide-react';
+import { API_BASE } from '../lib/api';
 import { cn } from '../lib/utils';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 
@@ -266,7 +267,7 @@ export default function Profile() {
                       <p>點「許可」後自動完成綁定，無需手動輸入任何資料</p>
                     </div>
                     <a
-                      href={`/api/auth/line/login?userId=${user?.id}`}
+                      href={`${API_BASE}/api/auth/line/login?userId=${user?.id}`}
                       className="flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-2xl font-bold text-white text-sm transition-all bg-[#06C755] hover:bg-[#05a847] shadow-sm"
                     >
                       <Link2 className="w-4 h-4" />
