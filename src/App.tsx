@@ -12,7 +12,6 @@ import AgentDashboard from './pages/AgentDashboard';
 import PostProperty from './pages/PostProperty';
 import Profile from './pages/Profile';
 import Messages from './pages/Messages';
-import AIAssistant from './components/AIAssistant';
 import ConfigStatusBanner from './components/ConfigStatusBanner';
 import { AnimatePresence } from 'motion/react';
 import { SupabaseProvider } from './context/SupabaseContext';
@@ -58,13 +57,6 @@ export default function App() {
               </Routes>
             </AnimatePresence>
           </div>
-
-          {/* AI 助手（特定頁面） */}
-          <Routes>
-            <Route path="/"         element={<AIAssistant />} />
-            <Route path="/listings" element={<AIAssistant />} />
-            <Route path="/favorites" element={<AIAssistant />} />
-          </Routes>
 
           {/* Footer */}
           <footer className="bg-[#FFF8F0] border-t border-[#E5D5C5] py-16 md:py-20 mb-16 md:mb-0">
