@@ -184,9 +184,12 @@ export default function Navbar() {
       </nav>
 
       {/* ══════════════════════════════
-          手機底部導覽列 (md 以上隱藏)
+          手機底部導覽列 (md 以上隱藏、物件詳細頁隱藏)
       ══════════════════════════════ */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#FFF8F0]/95 backdrop-blur-md border-t border-[#E5D5C5] safe-area-pb">
+      <nav className={cn(
+        'md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#FFF8F0]/95 backdrop-blur-md border-t border-[#E5D5C5] safe-area-pb',
+        p.startsWith('/property/') && 'hidden',
+      )}>
         {/* iOS 安全區域支援 */}
         <div className="flex items-stretch relative">
           <BottomTab to="/"         icon={Home}   label="首頁" active={p === '/'} />

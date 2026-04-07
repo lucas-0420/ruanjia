@@ -276,7 +276,7 @@ export default function FilterBar({ onSearch, onFilterChange, initialSearch = ''
 
   return (
     <>
-      <div className="bg-white shadow-sm">
+      <div className="bg-white shadow-sm sticky top-16 z-30">
 
         {/* ══════════════════════════════
             手機版搜尋列 (md 以上隱藏)
