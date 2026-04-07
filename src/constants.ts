@@ -38,6 +38,7 @@ export const MOCK_PROPERTIES: Property[] = [
     isZeroFee: true,
     createdAt: '2024-03-20T10:00:00Z',
     tags: ['近捷運', '景觀房', '全新裝潢'],
+    status: 'active',
   },
   {
     id: '2',
@@ -75,6 +76,7 @@ export const MOCK_PROPERTIES: Property[] = [
     isZeroFee: true,
     createdAt: '2024-03-21T14:30:00Z',
     tags: ['近公園', '靜巷', '包水網'],
+    status: 'active',
   },
   {
     id: '3',
@@ -112,6 +114,7 @@ export const MOCK_PROPERTIES: Property[] = [
     isZeroFee: false,
     createdAt: '2024-03-19T09:15:00Z',
     tags: ['家庭首選', '學區房', '有車位'],
+    status: 'active',
   },
   {
     id: '4',
@@ -149,6 +152,7 @@ export const MOCK_PROPERTIES: Property[] = [
     isZeroFee: true,
     createdAt: '2024-03-22T11:00:00Z',
     tags: ['近高鐵', '高樓層', '工程師首選'],
+    status: 'active',
   },
   {
     id: '5',
@@ -186,6 +190,7 @@ export const MOCK_PROPERTIES: Property[] = [
     isZeroFee: true,
     createdAt: '2024-03-23T15:45:00Z',
     tags: ['近校園', '生活機能佳', '包水網'],
+    status: 'active',
   },
   {
     id: '6',
@@ -223,6 +228,7 @@ export const MOCK_PROPERTIES: Property[] = [
     isZeroFee: true,
     createdAt: '2024-03-24T10:00:00Z',
     tags: ['近逢甲', '生活便利', '全新裝潢'],
+    status: 'active',
   },
   {
     id: '7',
@@ -260,5 +266,6 @@ export const MOCK_PROPERTIES: Property[] = [
     isZeroFee: false,
     createdAt: '2024-03-25T14:30:00Z',
     tags: ['高樓層', '視野佳', '家庭首選'],
+    status: 'active',
   },
 ];

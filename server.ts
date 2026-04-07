@@ -6,6 +6,9 @@ import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import * as line from '@line/bot-sdk';
 import { GoogleGenAI } from "@google/genai";
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import { z } from 'zod';
 
 dotenv.config();
 
@@ -31,6 +34,38 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
 const app = express();
 const PORT = 3000;
+
+// ── 資安：HTTP 安全標頭（防 XSS / clickjacking / MIME 嗅探等）──
+app.use(helmet({
+  // CSP 略過，由前端框架（Vite/React）自行管理
+  contentSecurityPolicy: false,
+}));
+
+// ── 資安：速率限制 ──
+// 一般 API：每 IP 每 15 分鐘 200 次
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: '請求過於頻繁，請稍後再試' },
+});
+// 寫入操作（新增/更新/刪除）：每 IP 每 15 分鐘 30 次
+const writeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: '操作過於頻繁，請稍後再試' },
+});
+// 管理後台：每 IP 每 15 分鐘 100 次
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: '請求過於頻繁，請稍後再試' },
+});
 
 // --- LOGGING MIDDLEWARE (TOP) ---
 const serverLogs: string[] = [];
@@ -178,8 +213,37 @@ function parsePropertyFromText(text: string) {
   return result;
 }
 
+// ── Zod Schema：驗證 PUT /api/properties/:id 的 request body ──
+const propertyUpdateSchema = z.object({
+  title: z.string().min(1).max(100).optional(),
+  price: z.number().int().min(0).max(999999).optional(),
+  type: z.enum(['studio', 'room', 'apartment', 'house']).optional(),
+  city: z.string().max(10).optional(),
+  district: z.string().max(10).optional(),
+  address: z.string().max(100).optional(),
+  bedrooms: z.number().int().min(0).max(20).optional(),
+  bathrooms: z.number().int().min(0).max(20).optional(),
+  area: z.number().min(0).max(9999).optional(),
+  floor: z.number().int().min(0).max(200).optional(),
+  total_floors: z.number().int().min(0).max(200).optional(),
+  management_fee: z.number().int().min(0).optional(),
+  deposit: z.string().max(100).optional(),
+  amenities: z.array(z.string().max(30)).max(50).optional(),
+  images: z.array(z.string().url()).max(30).optional(),
+  description: z.string().max(5000).optional(),
+  owner_name: z.string().max(50).optional(),
+  owner_phone: z.string().max(20).optional(),
+  owner_line_id: z.string().max(50).optional(),
+  owner_avatar: z.string().max(500).optional(),
+  is_zero_fee: z.boolean().optional(),
+  tags: z.array(z.string().max(20)).max(20).optional(),
+  status: z.enum(['active', 'archived']).optional(),
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+});
+
 // --- AI Chat API (安全：API Key 只在後端) ---
-app.post('/api/ai/chat', async (req, res) => {
+app.post('/api/ai/chat', apiLimiter, async (req, res) => {
   if (!process.env.GEMINI_API_KEY) {
     return res.status(503).json({ error: 'AI 服務未設定' });
   }
@@ -240,15 +304,33 @@ app.post(webhookPaths, express.raw({ type: '*/*' }), async (req, res) => {
           addLog(`Received LINE text message from ${userId}`);
           const parsedData = await parsePropertyFromText(message.text);
 
-          // 取得 LINE 用戶名稱
+          // 查詢是否有平台帳號綁定此 LINE userId
+          const { data: linkedUser } = await supabase
+            .from('users')
+            .select('id, display_name, photo_url')
+            .eq('line_user_id', userId)
+            .single();
+
+          // 取得顯示名稱與頭像：優先用平台帳號資料，否則用 LINE 個人資料
           let ownerName = 'LINE 房東';
           let ownerAvatar = '';
-          try {
-            const profile = await lineClient.getProfile(userId);
-            ownerName = profile.displayName;
-            ownerAvatar = profile.pictureUrl || '';
-          } catch (e: any) {
-            addLog(`Cannot get LINE profile: ${e.message}`);
+          let platformOwnerId: string | null = linkedUser?.id || null;
+
+          if (linkedUser) {
+            // 已綁定平台帳號 → 用平台資料
+            ownerName = linkedUser.display_name || 'LINE 房東';
+            ownerAvatar = linkedUser.photo_url || '';
+            addLog(`[LINE] Linked to platform user: ${linkedUser.id}`);
+          } else {
+            // 未綁定 → 用 LINE 個人資料，房源標記為待審核
+            try {
+              const profile = await lineClient.getProfile(userId);
+              ownerName = profile.displayName;
+              ownerAvatar = profile.pictureUrl || '';
+            } catch (e: any) {
+              addLog(`Cannot get LINE profile: ${e.message}`);
+            }
+            addLog(`[LINE] No platform account linked for LINE user: ${userId}`);
           }
 
           // 判斷是否有足夠資料自動上架
@@ -267,11 +349,14 @@ app.post(webhookPaths, express.raw({ type: '*/*' }), async (req, res) => {
               bathrooms: parsedData.bathrooms || 1,
               area: parsedData.area || 0,
               description: parsedData.description || '',
+              owner_id: platformOwnerId,            // 綁定平台帳號則掛在該帳號下
               owner_name: ownerName,
               owner_phone: '',
+              owner_line_id: userId,                // LINE User ID，供聯絡按鈕使用
               owner_avatar: ownerAvatar,
+              owner_role: platformOwnerId ? '仲介' : 'LINE', // 已綁定顯示仲介，否則標記 LINE 來源
               is_zero_fee: true,
-              status: 'active',
+              status: platformOwnerId ? 'active' : 'pending', // 未綁定先設為待審核
               images: [],
               tags: [],
             }).select('id').single();
@@ -419,13 +504,17 @@ app.post(webhookPaths, express.raw({ type: '*/*' }), async (req, res) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const ADMIN_EMAIL = '0420.lucas111@gmail.com';
-
 // 驗證 JWT 並回傳用戶資料（透過 Supabase 驗簽，防偽造）
 async function verifyToken(token: string): Promise<{ id: string; email: string } | null> {
   const { data: { user }, error } = await supabase.auth.getUser(token);
   if (error || !user) return null;
   return { id: user.id, email: user.email || '' };
+}
+
+// 查詢資料庫確認是否為 admin（唯一判斷依據，不依賴 email）
+async function checkIsAdmin(userId: string): Promise<boolean> {
+  const { data } = await supabase.from('users').select('role').eq('id', userId).single();
+  return data?.role === 'admin';
 }
 
 // Admin Auth Middleware
@@ -436,44 +525,58 @@ const requireAdmin = async (req: any, res: any, next: any) => {
   const user = await verifyToken(token);
   if (!user) return res.status(401).json({ error: 'Token 無效' });
 
-  const isAdmin = user.email === ADMIN_EMAIL ||
-    (await supabase.from('users').select('role').eq('id', user.id).single()).data?.role === 'admin';
-  if (!isAdmin) return res.status(403).json({ error: '權限不足' });
+  if (!(await checkIsAdmin(user.id))) return res.status(403).json({ error: '權限不足' });
 
   req.user = user;
   next();
 };
 
 // Admin Logs API
-app.get('/api/admin/logs', requireAdmin, (req, res) => {
+app.get('/api/admin/logs', adminLimiter, requireAdmin, (req, res) => {
   res.json({ logs: serverLogs });
 });
 
 // Admin Users API (service role bypasses RLS)
-app.get('/api/admin/users', requireAdmin, async (req, res) => {
+app.get('/api/admin/users', adminLimiter, requireAdmin, async (req, res) => {
   const { data, error } = await supabase.from('users').select('*').order('created_at', { ascending: false });
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return res.status(500).json({ error: '無法取得用戶列表' });
   res.json({ users: data });
 });
 
+// Admin Properties API — 查詢平台全部房源（含下架、含 LINE 上架的 owner_id=null）
+// 用 service role key 繞過 RLS，anon key 看不到下架的 LINE 房源
+app.get('/api/admin/properties', adminLimiter, requireAdmin, async (req, res) => {
+  const { data, error } = await supabase
+    .from('properties')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: '無法取得房源列表' });
+  res.json({ properties: data });
+});
+
 // Image upload API (service role bypasses storage RLS)
-app.post('/api/upload/image', express.raw({ type: () => true, limit: '55mb' }), async (req: any, res: any) => {
+app.post('/api/upload/image', writeLimiter, express.raw({ type: () => true, limit: '55mb' }), async (req: any, res: any) => {
   const token = req.headers['authorization']?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: '未授權' });
   const uploadUser = await verifyToken(token);
   if (!uploadUser) return res.status(401).json({ error: 'Token 無效' });
 
   const mimeType = ((req.headers['content-type'] as string) || 'image/jpeg').split(';')[0].trim();
+  // 白名單：只允許圖片格式，防止上傳惡意檔案
+  const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  if (!ALLOWED_MIMES.includes(mimeType)) {
+    return res.status(400).json({ error: '不支援的檔案格式，請上傳 JPG/PNG/WEBP/GIF' });
+  }
   const ext = mimeType.split('/')[1]?.split('+')[0] || 'jpg';
   const fileName = `properties/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
   const { error } = await supabase.storage.from('property-images').upload(fileName, req.body, { contentType: mimeType });
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return res.status(500).json({ error: '圖片上傳失敗，請稍後再試' });
   const { data } = supabase.storage.from('property-images').getPublicUrl(fileName);
   res.json({ url: data.publicUrl });
 });
 
 // Public user profile (no auth needed, only exposes safe fields)
-app.get('/api/users/:id', async (req, res) => {
+app.get('/api/users/:id', apiLimiter, async (req, res) => {
   const { id } = req.params;
   const { data, error } = await supabase
     .from('users')
@@ -485,7 +588,7 @@ app.get('/api/users/:id', async (req, res) => {
 });
 
 // 通用屬性更新：owner 或 admin 皆可，用 service key 繞過 RLS
-app.put('/api/properties/:id', async (req: any, res: any) => {
+app.put('/api/properties/:id', writeLimiter, async (req: any, res: any) => {
   const token = req.headers['authorization']?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: '未授權' });
 
@@ -493,48 +596,63 @@ app.put('/api/properties/:id', async (req: any, res: any) => {
   if (!authUser) return res.status(401).json({ error: 'Token 無效' });
 
   const userId = authUser.id;
-  const userEmail = authUser.email;
   const { id } = req.params;
+
+  // Zod 驗證 request body（防止惡意資料注入）
+  const parsed = propertyUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: '資料格式錯誤', details: parsed.error.flatten().fieldErrors });
+  }
 
   // 檢查是否為 owner 或 admin
   const { data: prop } = await supabase.from('properties').select('owner_id').eq('id', id).single();
   if (!prop) return res.status(404).json({ error: '找不到物件' });
 
-  const isAdmin = userEmail === ADMIN_EMAIL ||
-    (await supabase.from('users').select('role').eq('id', userId).single()).data?.role === 'admin';
+  const isAdmin = await checkIsAdmin(userId);
   const isOwner = prop.owner_id === userId;
 
   if (!isAdmin && !isOwner) return res.status(403).json({ error: '無權限修改此物件' });
 
-  // 白名單：只允許更新這些欄位，防止竄改 owner_id 等敏感欄位
-  const ALLOWED_FIELDS = [
-    'title', 'price', 'type', 'city', 'district', 'address',
-    'bedrooms', 'bathrooms', 'area', 'floor', 'total_floors',
-    'management_fee', 'deposit', 'amenities', 'images', 'description',
-    'owner_name', 'owner_phone', 'owner_line_id', 'owner_avatar',
-    'is_zero_fee', 'tags', 'status', 'lat', 'lng',
-  ];
-  const updates: Record<string, unknown> = {};
-  for (const key of ALLOWED_FIELDS) {
-    if (key in req.body) updates[key] = req.body[key];
-  }
+  // 使用 Zod 解析後的乾淨資料（已移除未知欄位，防止多傳欄位）
+  const updates = parsed.data as Record<string, unknown>;
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: '沒有可更新的欄位' });
 
   const { error } = await supabase.from('properties').update(updates).eq('id', id);
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return res.status(500).json({ error: '更新失敗，請稍後再試' });
   res.json({ ok: true });
 });
 
-app.patch('/api/admin/users/:id/role', requireAdmin, async (req, res) => {
+// 刪除房源：只有 owner 或 admin 才能刪
+app.delete('/api/properties/:id', writeLimiter, async (req: any, res: any) => {
+  const token = req.headers['authorization']?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: '未授權' });
+
+  const authUser = await verifyToken(token);
+  if (!authUser) return res.status(401).json({ error: 'Token 無效' });
+
+  const { id } = req.params;
+  const { data: prop } = await supabase.from('properties').select('owner_id').eq('id', id).single();
+  if (!prop) return res.status(404).json({ error: '找不到物件' });
+
+  const isAdmin = await checkIsAdmin(authUser.id);
+  const isOwner = prop.owner_id === authUser.id;
+  if (!isAdmin && !isOwner) return res.status(403).json({ error: '無權限刪除此物件' });
+
+  const { error } = await supabase.from('properties').delete().eq('id', id);
+  if (error) return res.status(500).json({ error: '刪除失敗，請稍後再試' });
+  res.json({ ok: true });
+});
+
+app.patch('/api/admin/users/:id/role', adminLimiter, requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { role } = req.body;
   if (!['user', 'agent', 'admin'].includes(role)) return res.status(400).json({ error: '無效角色' });
   const { error } = await supabase.from('users').update({ role }).eq('id', id);
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return res.status(500).json({ error: '更新角色失敗，請稍後再試' });
   res.json({ ok: true });
 });
 
-app.post('/api/admin/test-log', requireAdmin, (req, res) => {
+app.post('/api/admin/test-log', adminLimiter, requireAdmin, (req, res) => {
   addLog('TEST: 這是手動發送的測試日誌');
   res.json({ status: 'ok' });
 });
