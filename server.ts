@@ -362,6 +362,19 @@ app.post(webhookPaths, express.raw({ type: '*/*' }), async (req, res) => {
         
         if (message.type === 'text') {
           addLog(`Received LINE text message from ${userId}`);
+
+          // 優先判斷是否為綁定代碼（6位英數），是則綁定後回覆並跳過房源解析
+          const isBound = await tryBindCode(message.text, userId);
+          if (isBound) {
+            try {
+              await lineClient.pushMessage({
+                to: userId,
+                messages: [{ type: 'text', text: '✅ 帳號綁定成功！之後透過此 Bot 上傳的房源將自動歸到你的平台帳號下。' }],
+              });
+            } catch {}
+            continue;
+          }
+
           const parsedData = await parsePropertyFromText(message.text);
 
           // 查詢是否有平台帳號綁定此 LINE userId
@@ -842,119 +855,94 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // ──────────────────────────────────────────────────
-// LINE LOGIN OAUTH — 自動綁定平台帳號
-// 不需要用戶手動輸入 LINE User ID
-// 需要 .env：LINE_LOGIN_CHANNEL_ID / LINE_LOGIN_CHANNEL_SECRET / SERVER_URL
+// LINE 綁定 — 代碼驗證流程（不需要建立新頻道）
+// 流程：
+//   1. 前端產生一次性代碼（GET /api/auth/line/code）
+//   2. 用戶開啟現有 LINE Bot 傳送代碼
+//   3. Bot webhook 比對代碼 → 自動寫入 line_user_id
+//   4. 前端輪詢綁定狀態（GET /api/auth/line/status）
 // ──────────────────────────────────────────────────
 
-// CSRF 防護：state → { userId, expiresAt }，10 分鐘有效
-const lineLoginState = new Map<string, { userId: string; expiresAt: number }>();
+// 代碼 → { platformUserId, expiresAt }，15 分鐘有效，一次性
+const bindCodes = new Map<string, { platformUserId: string; expiresAt: number }>();
 setInterval(() => {
   const now = Date.now();
-  for (const [k, v] of lineLoginState) { if (v.expiresAt < now) lineLoginState.delete(k); }
+  for (const [k, v] of bindCodes) { if (v.expiresAt < now) bindCodes.delete(k); }
 }, 5 * 60 * 1000);
 
-// Step 1：前端呼叫此端點取得 LINE Login 授權 URL
-app.get('/api/auth/line/start', apiLimiter, async (req: any, res: any) => {
+// 產生 6 位大寫英數代碼，排除易混淆字元 (0/O, 1/I/L)
+function genBindCode(): string {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+// Step 1：前端取得代碼
+app.post('/api/auth/line/code', apiLimiter, async (req: any, res: any) => {
   const token = req.headers['authorization']?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: '未授權' });
   const authUser = await verifyToken(token);
   if (!authUser) return res.status(401).json({ error: 'Token 無效' });
 
-  const channelId = process.env.LINE_LOGIN_CHANNEL_ID;
-  const serverUrl = process.env.SERVER_URL;
-  if (!channelId || !serverUrl) {
-    return res.status(503).json({ error: 'LINE Login 尚未設定，請在 .env 加入 LINE_LOGIN_CHANNEL_ID / LINE_LOGIN_CHANNEL_SECRET / SERVER_URL' });
+  // 若此用戶已有等待中的代碼，先刪除
+  for (const [k, v] of bindCodes) {
+    if (v.platformUserId === authUser.id) bindCodes.delete(k);
   }
 
-  // 產生隨機 state，綁定此 user，防止 CSRF
-  const state = `${authUser.id}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-  lineLoginState.set(state, { userId: authUser.id, expiresAt: Date.now() + 10 * 60 * 1000 });
+  // 產生新代碼（確保不重複）
+  let code = genBindCode();
+  while (bindCodes.has(code)) code = genBindCode();
 
-  const params = new URLSearchParams({
-    response_type: 'code',
-    client_id: channelId,
-    redirect_uri: `${serverUrl}/api/auth/line/callback`,
-    state,
-    scope: 'profile',
+  bindCodes.set(code, { platformUserId: authUser.id, expiresAt: Date.now() + 15 * 60 * 1000 });
+  addLog(`[LINE-BIND] Code generated for user ${authUser.id}: ${code}`);
+
+  // LINE Bot 的 @ID（供前端組成連結）
+  const botBasicId = process.env.LINE_BOT_BASIC_ID || '';
+
+  res.json({ code, botBasicId, expiresIn: 900 }); // 900 秒 = 15 分鐘
+});
+
+// Step 2：前端輪詢是否綁定成功
+app.get('/api/auth/line/status', apiLimiter, async (req: any, res: any) => {
+  const token = req.headers['authorization']?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: '未授權' });
+  const authUser = await verifyToken(token);
+  if (!authUser) return res.status(401).json({ error: 'Token 無效' });
+
+  const { data } = await supabase.from('users').select('line_user_id').eq('id', authUser.id).single();
+  res.json({ bound: !!data?.line_user_id, lineUserId: data?.line_user_id || null });
+});
+
+// Step 3（由 LINE Bot webhook 呼叫）：用戶在 LINE 傳代碼時比對並綁定
+// 此函式在 webhook handler 的文字訊息處理中呼叫
+async function tryBindCode(text: string, lineUserId: string): Promise<boolean> {
+  const code = text.trim().toUpperCase();
+  const entry = bindCodes.get(code);
+  if (!entry) return false;
+  if (entry.expiresAt < Date.now()) { bindCodes.delete(code); return false; }
+
+  bindCodes.delete(code); // 一次性使用
+
+  const { error } = await supabase.from('users')
+    .update({ line_user_id: lineUserId })
+    .eq('id', entry.platformUserId);
+
+  if (error) {
+    addLog(`[LINE-BIND] DB error: ${error.message}`);
+    return false;
+  }
+
+  addLog(`[LINE-BIND] ✅ Bound LINE ${lineUserId} → platform user ${entry.platformUserId}`);
+  addEvent({
+    type: 'line_bind',
+    severity: 'info',
+    actor: entry.platformUserId,
+    target: lineUserId,
+    detail: `LINE 帳號綁定成功（代碼驗證）`,
   });
-
-  res.json({ url: `https://access.line.me/oauth2/v2.1/authorize?${params}` });
-});
-
-// Step 2：LINE 導回此 callback，取得 LINE userId 並寫入 DB
-app.get('/api/auth/line/callback', async (req: any, res: any) => {
-  const { code, state, error: oauthError } = req.query as Record<string, string>;
-
-  if (oauthError || !code || !state) {
-    addLog(`[LINE-LOGIN] User cancelled or error: ${oauthError}`);
-    return res.redirect('/profile?line_bind=cancelled');
-  }
-
-  const stateData = lineLoginState.get(state);
-  if (!stateData || stateData.expiresAt < Date.now()) {
-    addLog(`[LINE-LOGIN] Invalid or expired state: ${state}`);
-    return res.redirect('/profile?line_bind=error&reason=expired');
-  }
-  lineLoginState.delete(state); // 一次性使用
-
-  try {
-    const channelId     = process.env.LINE_LOGIN_CHANNEL_ID!;
-    const channelSecret = process.env.LINE_LOGIN_CHANNEL_SECRET!;
-    const serverUrl     = process.env.SERVER_URL!;
-
-    // 用授權碼換 access token
-    const tokenRes = await fetch('https://api.line.me/oauth2/v2.1/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri: `${serverUrl}/api/auth/line/callback`,
-        client_id: channelId,
-        client_secret: channelSecret,
-      }),
-    });
-    const tokenData = await tokenRes.json() as any;
-    if (!tokenData.access_token) {
-      addLog(`[LINE-LOGIN] Token exchange failed: ${JSON.stringify(tokenData)}`);
-      return res.redirect('/profile?line_bind=error&reason=token');
-    }
-
-    // 用 access token 取得 LINE 個人資料（含 userId）
-    const profileRes = await fetch('https://api.line.me/v2/profile', {
-      headers: { Authorization: `Bearer ${tokenData.access_token}` },
-    });
-    const profile = await profileRes.json() as any;
-    if (!profile.userId) {
-      return res.redirect('/profile?line_bind=error&reason=profile');
-    }
-
-    // 寫入 DB（line_user_id 欄位）
-    const { error: dbErr } = await supabase.from('users')
-      .update({ line_user_id: profile.userId })
-      .eq('id', stateData.userId);
-
-    if (dbErr) {
-      addLog(`[LINE-LOGIN] DB write failed: ${dbErr.message}`);
-      return res.redirect('/profile?line_bind=error&reason=db');
-    }
-
-    addLog(`[LINE-LOGIN] ✅ Bound ${profile.userId} (${profile.displayName}) → platform user ${stateData.userId}`);
-    addEvent({
-      type: 'line_bind',
-      severity: 'info',
-      actor: stateData.userId,
-      target: profile.displayName || profile.userId,
-      detail: `LINE 帳號自動綁定成功 (${profile.userId})`,
-    });
-
-    res.redirect('/profile?line_bind=success');
-  } catch (e: any) {
-    addLog(`[LINE-LOGIN] Unexpected error: ${e.message}`);
-    res.redirect('/profile?line_bind=error&reason=server');
-  }
-});
+  return true;
+}
 
 // ── 全局 Express 錯誤處理（捕獲所有未處理的 500）──
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

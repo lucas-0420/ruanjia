@@ -14,7 +14,9 @@ export default function Profile() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [lineUserId, setLineUserId] = useState('');
-  const [lineDisplayName, setLineDisplayName] = useState('');
+  const [bindCode, setBindCode] = useState('');
+  const [bindBotId, setBindBotId] = useState('');
+  const [bindExpiry, setBindExpiry] = useState(0); // 剩餘秒數
   const [bindingLine, setBindingLine] = useState(false);
   const [bindMsg, setBindMsg] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -60,31 +62,66 @@ export default function Profile() {
     setSearchParams({}, { replace: true });
   }, []);
 
-  // 點擊「一鍵綁定 LINE」：向後端取得 OAuth URL 後跳轉
-  const handleBindLine = async () => {
+  // 取得綁定代碼，並開始倒數 + 輪詢
+  const handleGetCode = async () => {
     if (!user) return;
     setBindingLine(true);
     setBindMsg(null);
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { setBindingLine(false); return; }
-    const res = await fetch('/api/auth/line/start', {
+    const res = await fetch('/api/auth/line/code', {
+      method: 'POST',
       headers: { Authorization: `Bearer ${session.access_token}` },
     });
     const data = await res.json();
     if (!res.ok) {
-      setBindMsg({ type: 'error', text: data.error || '無法啟動 LINE 綁定' });
+      setBindMsg({ type: 'error', text: data.error || '無法產生代碼' });
       setBindingLine(false);
       return;
     }
-    // 跳轉到 LINE Login 授權頁
-    window.location.href = data.url;
+    setBindCode(data.code);
+    setBindBotId(data.botBasicId || '');
+    setBindExpiry(data.expiresIn || 900);
+    setBindingLine(false);
   };
+
+  // 倒數計時
+  useEffect(() => {
+    if (bindExpiry <= 0) return;
+    const t = setInterval(() => setBindExpiry(s => {
+      if (s <= 1) { clearInterval(t); setBindCode(''); return 0; }
+      return s - 1;
+    }), 1000);
+    return () => clearInterval(t);
+  }, [bindExpiry > 0 && bindCode]);
+
+  // 輪詢綁定狀態（有代碼時每 3 秒查一次）
+  useEffect(() => {
+    if (!bindCode || !user) return;
+    const poll = setInterval(async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const res = await fetch('/api/auth/line/status', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const data = await res.json();
+      if (data.bound) {
+        setLineUserId(data.lineUserId);
+        setBindCode('');
+        setBindExpiry(0);
+        setBindMsg({ type: 'success', text: '✅ LINE 帳號綁定成功！之後透過 LINE Bot 上傳的房源將自動歸到你帳號下。' });
+        clearInterval(poll);
+      }
+    }, 3000);
+    return () => clearInterval(poll);
+  }, [bindCode]);
 
   const handleUnbindLine = async () => {
     if (!user || !window.confirm('確定要解除 LINE 綁定嗎？')) return;
     await supabase.from('users').update({ line_user_id: null }).eq('id', user.id);
     setLineUserId('');
-    setLineDisplayName('');
+    setBindCode('');
+    setBindExpiry(0);
     setBindMsg({ type: 'info', text: '已解除 LINE 綁定。' });
   };
 
@@ -283,30 +320,53 @@ export default function Profile() {
                       解除綁定
                     </button>
                   </div>
+                ) : bindCode ? (
+                  /* 代碼已產生，等待用戶在 LINE Bot 輸入 */
+                  <div className="space-y-4">
+                    <div className="p-5 bg-gray-50 rounded-2xl border border-gray-200 text-center space-y-3">
+                      <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">你的綁定代碼</p>
+                      <p className="text-4xl font-black font-mono tracking-[0.3em] text-gray-900">{bindCode}</p>
+                      <p className="text-xs text-gray-400">
+                        {Math.floor(bindExpiry / 60)}:{String(bindExpiry % 60).padStart(2, '0')} 後失效
+                      </p>
+                    </div>
+
+                    <div className="text-sm text-gray-600 space-y-1.5">
+                      <p className="font-bold text-gray-800">步驟</p>
+                      <p>1. 開啟 LINE Bot（快速上傳）</p>
+                      <p>2. 傳送上方代碼給 Bot</p>
+                      <p>3. 此頁面自動偵測完成綁定 <Loader2 className="w-3 h-3 inline animate-spin text-gray-400" /></p>
+                    </div>
+
+                    {bindBotId && (
+                      <a
+                        href={`https://line.me/ti/p/${bindBotId.startsWith('@') ? '~' + bindBotId.slice(1) : bindBotId}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center justify-center gap-2 px-6 py-3 rounded-2xl font-bold text-white text-sm bg-[#06C755] hover:bg-[#05a847] transition-all"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        開啟 LINE Bot
+                      </a>
+                    )}
+                  </div>
                 ) : (
-                  /* 未綁定 — 一鍵授權 */
+                  /* 未綁定 — 取得代碼 */
                   <div className="space-y-4">
                     <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 text-sm text-gray-600 leading-relaxed space-y-1">
                       <p className="font-bold text-gray-800">流程說明</p>
-                      <p>1. 點擊下方按鈕</p>
-                      <p>2. 在 LINE 授權頁面允許存取</p>
-                      <p>3. 自動完成綁定，無需手動輸入</p>
+                      <p>1. 點擊下方按鈕取得代碼</p>
+                      <p>2. 開啟快速上傳 LINE Bot</p>
+                      <p>3. 傳送代碼給 Bot，自動完成綁定</p>
                     </div>
-
                     <button
-                      onClick={handleBindLine}
+                      onClick={handleGetCode}
                       disabled={bindingLine}
                       className="flex items-center gap-2.5 px-6 py-3.5 rounded-2xl font-bold text-white text-sm transition-all bg-[#06C755] hover:bg-[#05a847] disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                     >
-                      {bindingLine
-                        ? <Loader2 className="w-4 h-4 animate-spin" />
-                        : <ExternalLink className="w-4 h-4" />}
-                      {bindingLine ? '跳轉中…' : '一鍵綁定 LINE'}
+                      {bindingLine ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+                      {bindingLine ? '產生中…' : '取得綁定代碼'}
                     </button>
-
-                    <p className="text-xs text-gray-400">
-                      需先在 LINE Developers Console 建立 LINE Login 頻道，並在 .env 設定 LINE_LOGIN_CHANNEL_ID / LINE_LOGIN_CHANNEL_SECRET / SERVER_URL
-                    </p>
                   </div>
                 )}
               </div>
