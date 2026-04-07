@@ -3,19 +3,33 @@ import { useFirebase, mapPropertyFromDB } from '../context/SupabaseContext';
 import { supabase } from '../supabase';
 import { Navigate, Link } from 'react-router-dom';
 import { cn } from '../lib/utils';
-import { Users, Smartphone, ShieldCheck, LayoutDashboard, Home, Edit, Trash2, Loader2, CheckCircle, Archive, Search, X, UserCheck, Building2, Crown } from 'lucide-react';
+import { Users, Smartphone, ShieldCheck, LayoutDashboard, Home, Edit, Trash2, Loader2, CheckCircle, Archive, Search, X, UserCheck, Building2, Crown, ScrollText, RefreshCw, ShieldAlert, ServerCrash, Trash, ArrowLeftRight, Power, AlertTriangle } from 'lucide-react';
 import { LineSyncPanel } from './AdminSync';
 import { Property } from '../types';
 
 interface AppUser { id: string; email: string; displayName: string; photoUrl: string; role: string; createdAt: string; }
 interface ConfirmModal { id: string; title: string; nextStatus: 'active' | 'archived'; }
+interface AdminEvent {
+  id: string;
+  type: 'role_change' | 'property_status' | 'property_delete' | 'rate_limit' | 'server_error' | 'server_start' | 'login_fail';
+  severity: 'info' | 'warning' | 'error';
+  actor: string;
+  target: string;
+  detail: string;
+  ip?: string;
+  timestamp: string;
+}
 
-type Tab = 'users' | 'line' | 'properties';
+type Tab = 'users' | 'line' | 'properties' | 'events';
 
 export default function AdminUsers() {
   const { user, userRole, isAuthReady } = useFirebase();
   const [activeTab, setActiveTab] = useState<Tab>('users');
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
+
+  // 事件紀錄狀態
+  const [events, setEvents] = useState<AdminEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
 
   // 房源管理狀態
   const [allProperties, setAllProperties] = useState<Property[]>([]);
@@ -41,6 +55,27 @@ export default function AdminUsers() {
     };
     fetchUsers();
   }, [isAdmin]);
+
+  // 事件紀錄 fetch（切換到 events tab 或手動刷新時觸發）
+  const fetchEvents = async () => {
+    setEventsLoading(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setEventsLoading(false); return; }
+    const res = await fetch('/api/admin/events', { headers: { Authorization: `Bearer ${session.access_token}` } });
+    if (res.ok) {
+      const { events: data } = await res.json();
+      setEvents(data || []);
+    }
+    setEventsLoading(false);
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'events' || !isAdmin) return;
+    fetchEvents();
+    // 每 30 秒自動更新
+    const interval = setInterval(fetchEvents, 30_000);
+    return () => clearInterval(interval);
+  }, [activeTab, isAdmin]);
 
   // 切換到房源Tab時抓全部房源（走後端 API，service role 可看到下架與 LINE 上架的房源）
   useEffect(() => {
@@ -134,9 +169,26 @@ export default function AdminUsers() {
     user:  appUsers.filter(u => u.role === 'user').length,
   };
 
+  // 事件類型設定
+  const eventConfig: Record<AdminEvent['type'], { label: string; Icon: React.ElementType; color: string }> = {
+    role_change:     { label: '角色變更', Icon: ArrowLeftRight, color: 'text-blue-600 bg-blue-50' },
+    property_status: { label: '上下架',   Icon: CheckCircle,    color: 'text-green-600 bg-green-50' },
+    property_delete: { label: '刪除房源', Icon: Trash,          color: 'text-red-600 bg-red-50' },
+    rate_limit:      { label: '流量限制', Icon: ShieldAlert,    color: 'text-orange-600 bg-orange-50' },
+    server_error:    { label: '伺服器錯誤', Icon: ServerCrash,  color: 'text-red-700 bg-red-100' },
+    server_start:    { label: '伺服器啟動', Icon: Power,        color: 'text-gray-500 bg-gray-100' },
+    login_fail:      { label: '登入失敗', Icon: AlertTriangle,  color: 'text-yellow-600 bg-yellow-50' },
+  };
+  const severityBorder: Record<AdminEvent['severity'], string> = {
+    info: 'border-l-blue-400',
+    warning: 'border-l-orange-400',
+    error: 'border-l-red-500',
+  };
+
   const navItems = [
     { key: 'users' as Tab, label: '用戶管理', Icon: Users },
     { key: 'properties' as Tab, label: '房源管理', Icon: Home },
+    { key: 'events' as Tab, label: '事件紀錄', Icon: ScrollText },
     { key: 'line' as Tab, label: 'LINE 同步', Icon: Smartphone },
   ];
 
@@ -366,6 +418,71 @@ export default function AdminUsers() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </>
+          )}
+
+          {/* 事件紀錄 */}
+          {activeTab === 'events' && (
+            <>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="font-bold text-gray-900">事件紀錄</span>
+                  <span className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{events.length}</span>
+                  <span className="text-xs text-gray-400">每 30 秒自動更新</span>
+                </div>
+                <button
+                  onClick={fetchEvents}
+                  disabled={eventsLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-all disabled:opacity-50"
+                >
+                  <RefreshCw className={cn('w-3.5 h-3.5', eventsLoading && 'animate-spin')} />
+                  重新整理
+                </button>
+              </div>
+
+              <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+                {eventsLoading && events.length === 0 ? (
+                  <div className="flex items-center justify-center py-20">
+                    <Loader2 className="w-8 h-8 animate-spin text-orange-600" />
+                  </div>
+                ) : events.length === 0 ? (
+                  <div className="p-20 text-center text-gray-400">目前沒有事件紀錄（伺服器重啟後會清空）</div>
+                ) : events.map(ev => {
+                  const cfg = eventConfig[ev.type] || eventConfig.server_error;
+                  const border = severityBorder[ev.severity];
+                  return (
+                    <div key={ev.id} className={cn('flex items-start gap-4 px-6 py-4 border-b border-gray-50 last:border-0 border-l-4', border)}>
+                      {/* 類型圖示 */}
+                      <div className={cn('w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5', cfg.color)}>
+                        <cfg.Icon className="w-4 h-4" />
+                      </div>
+
+                      {/* 內容 */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={cn('text-xs font-bold px-2 py-0.5 rounded-full', cfg.color)}>{cfg.label}</span>
+                          <span className="font-bold text-gray-900 text-sm truncate">{ev.target}</span>
+                        </div>
+                        <p className="text-sm text-gray-500 mt-0.5">{ev.detail}</p>
+                        <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
+                          <span>操作者：{ev.actor}</span>
+                          {ev.ip && <span>IP：{ev.ip}</span>}
+                        </div>
+                      </div>
+
+                      {/* 時間 */}
+                      <div className="shrink-0 text-right">
+                        <p className="text-xs text-gray-400">
+                          {new Date(ev.timestamp).toLocaleDateString('zh-TW')}
+                        </p>
+                        <p className="text-xs font-mono text-gray-400">
+                          {new Date(ev.timestamp).toLocaleTimeString('zh-TW')}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}

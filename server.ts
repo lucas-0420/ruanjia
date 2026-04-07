@@ -74,6 +74,7 @@ const apiLimiter = rateLimit({
   handler: (req, res, next, options) => {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     addLog(`[RATE-LIMIT] apiLimiter triggered: ${ip} → ${req.method} ${req.path}`);
+    addEvent({ type: 'rate_limit', severity: 'warning', actor: 'system', target: req.path, detail: `一般 API 流量限制觸發 (200次/15min)`, ip });
     notifyAdmin(`⚠️ 流量異常警報\nIP: ${ip}\n路徑: ${req.method} ${req.path}\n觸發: 一般 API 限制 (200次/15min)`, `rate-api-${ip}`);
     res.status(options.statusCode).json(options.message);
   },
@@ -88,6 +89,7 @@ const writeLimiter = rateLimit({
   handler: (req, res, next, options) => {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     addLog(`[RATE-LIMIT] writeLimiter triggered: ${ip} → ${req.method} ${req.path}`);
+    addEvent({ type: 'rate_limit', severity: 'error', actor: 'system', target: req.path, detail: `⚠️ 寫入操作異常觸發 (30次/15min)，可能有人暴力操作`, ip });
     notifyAdmin(`🚨 寫入操作異常警報\nIP: ${ip}\n路徑: ${req.method} ${req.path}\n觸發: 寫入限制 (30次/15min)\n⚠️ 可能有人嘗試暴力操作`, `rate-write-${ip}`);
     res.status(options.statusCode).json(options.message);
   },
@@ -102,6 +104,7 @@ const adminLimiter = rateLimit({
   handler: (req, res, next, options) => {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     addLog(`[RATE-LIMIT] adminLimiter triggered: ${ip} → ${req.method} ${req.path}`);
+    addEvent({ type: 'rate_limit', severity: 'error', actor: 'system', target: req.path, detail: `🔴 管理後台頻繁請求 (100次/15min)，可能有人掃描後台`, ip });
     notifyAdmin(`🔴 管理後台異常警報\nIP: ${ip}\n路徑: ${req.method} ${req.path}\n觸發: 管理 API 限制 (100次/15min)\n⚠️ 可能有人掃描後台`, `rate-admin-${ip}`);
     res.status(options.statusCode).json(options.message);
   },
@@ -115,6 +118,23 @@ const addLog = (msg: string) => {
   serverLogs.push(log);
   if (serverLogs.length > 100) serverLogs.shift();
 };
+
+// ── 結構化事件紀錄（管理室顯示用）──
+interface AdminEvent {
+  id: string;
+  type: 'role_change' | 'property_status' | 'property_delete' | 'rate_limit' | 'server_error' | 'server_start' | 'login_fail';
+  severity: 'info' | 'warning' | 'error';
+  actor: string;   // 操作者 email 或 'system'
+  target: string;  // 被操作的對象
+  detail: string;  // 人類可讀說明
+  ip?: string;
+  timestamp: string;
+}
+const adminEvents: AdminEvent[] = [];
+function addEvent(e: Omit<AdminEvent, 'id' | 'timestamp'>) {
+  adminEvents.unshift({ ...e, id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, timestamp: new Date().toISOString() });
+  if (adminEvents.length > 200) adminEvents.pop(); // 最多保留 200 筆
+}
 
 app.use((req, res, next) => {
   const ua = req.headers['user-agent'] || '';
@@ -571,9 +591,14 @@ const requireAdmin = async (req: any, res: any, next: any) => {
   next();
 };
 
-// Admin Logs API
+// Admin Logs API（原始 server log）
 app.get('/api/admin/logs', adminLimiter, requireAdmin, (req, res) => {
   res.json({ logs: serverLogs });
+});
+
+// Admin Events API（結構化事件紀錄）
+app.get('/api/admin/events', adminLimiter, requireAdmin, (req, res) => {
+  res.json({ events: adminEvents });
 });
 
 // Admin Users API (service role bypasses RLS)
@@ -659,6 +684,20 @@ app.put('/api/properties/:id', writeLimiter, async (req: any, res: any) => {
 
   const { error } = await supabase.from('properties').update(updates).eq('id', id);
   if (error) return res.status(500).json({ error: '更新失敗，請稍後再試' });
+
+  // 若有改狀態，記錄事件
+  if (updates.status) {
+    const { data: propInfo } = await supabase.from('properties').select('title').eq('id', id).single();
+    const statusLabel: Record<string, string> = { active: '上架', archived: '下架' };
+    addEvent({
+      type: 'property_status',
+      severity: 'info',
+      actor: authUser.email || authUser.id,
+      target: propInfo?.title || id,
+      detail: `房源狀態變更為「${statusLabel[updates.status as string] || updates.status}」`,
+      ip: req.ip || req.socket?.remoteAddress,
+    });
+  }
   res.json({ ok: true });
 });
 
@@ -678,17 +717,43 @@ app.delete('/api/properties/:id', writeLimiter, async (req: any, res: any) => {
   const isOwner = prop.owner_id === authUser.id;
   if (!isAdmin && !isOwner) return res.status(403).json({ error: '無權限刪除此物件' });
 
+  // 先取名稱，刪了就找不到了
+  const { data: propInfo } = await supabase.from('properties').select('title').eq('id', id).single();
   const { error } = await supabase.from('properties').delete().eq('id', id);
   if (error) return res.status(500).json({ error: '刪除失敗，請稍後再試' });
+
+  addEvent({
+    type: 'property_delete',
+    severity: 'warning',
+    actor: authUser.email || authUser.id,
+    target: propInfo?.title || id,
+    detail: `房源已永久刪除`,
+    ip: req.ip || req.socket?.remoteAddress,
+  });
   res.json({ ok: true });
 });
 
-app.patch('/api/admin/users/:id/role', adminLimiter, requireAdmin, async (req, res) => {
+app.patch('/api/admin/users/:id/role', adminLimiter, requireAdmin, async (req: any, res: any) => {
   const { id } = req.params;
-  const { role } = req.body;
+  const { role, targetName } = req.body;
   if (!['user', 'agent', 'admin'].includes(role)) return res.status(400).json({ error: '無效角色' });
+
+  // 查詢被改角色的用戶名稱
+  const { data: targetUser } = await supabase.from('users').select('display_name, email, role').eq('id', id).single();
+  const oldRole = targetUser?.role || '未知';
+  const roleLabel: Record<string, string> = { user: '租客', agent: '仲介', admin: '管理員' };
+
   const { error } = await supabase.from('users').update({ role }).eq('id', id);
   if (error) return res.status(500).json({ error: '更新角色失敗，請稍後再試' });
+
+  addEvent({
+    type: 'role_change',
+    severity: 'info',
+    actor: req.user?.email || '管理員',
+    target: targetUser?.display_name || targetUser?.email || id,
+    detail: `角色變更：${roleLabel[oldRole] || oldRole} → ${roleLabel[role] || role}`,
+    ip: req.ip || req.socket?.remoteAddress,
+  });
   res.json({ ok: true });
 });
 
@@ -780,13 +845,14 @@ if (process.env.NODE_ENV !== 'production') {
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   const msg = err?.message || '未知錯誤';
   addLog(`[SERVER-ERROR] ${req.method} ${req.path} → ${msg}`);
+  addEvent({ type: 'server_error', severity: 'error', actor: 'system', target: `${req.method} ${req.path}`, detail: msg.substring(0, 200), ip: req.ip });
   notifyAdmin(`💥 伺服器錯誤\n路徑: ${req.method} ${req.path}\n錯誤: ${msg.substring(0, 200)}`, `err-${req.path}`);
   res.status(500).json({ error: '伺服器發生錯誤，請稍後再試' });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on http://localhost:${PORT}`);
-  // 啟動時通知管理員（確認 LINE 警報設定正常）
+  addEvent({ type: 'server_start', severity: 'info', actor: 'system', target: 'server', detail: `伺服器啟動，PORT ${PORT}` });
   if (ADMIN_LINE_USER_ID) {
     notifyAdmin('✅ 暖家平台已啟動\n伺服器正常運行中', 'startup');
   }
