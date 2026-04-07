@@ -955,6 +955,8 @@ async function tryBindCode(text: string, lineUserId: string): Promise<boolean> {
 const LINE_LOGIN_CHANNEL_ID = process.env.LINE_LOGIN_CHANNEL_ID || '';
 const LINE_LOGIN_CHANNEL_SECRET = process.env.LINE_LOGIN_CHANNEL_SECRET || '';
 const LINE_LOGIN_CALLBACK_URL = process.env.LINE_LOGIN_CALLBACK_URL || 'http://localhost:3000/api/auth/line/callback';
+// 前端網址（Vercel），callback 成功後 redirect 回前端
+const FRONTEND_URL = process.env.VITE_FRONTEND_URL || 'http://localhost:3000';
 
 // state → { userId, expiresAt }，10 分鐘有效，一次性
 const lineLoginStates = new Map<string, { userId: string; expiresAt: number }>();
@@ -991,17 +993,17 @@ app.get('/api/auth/line/callback', async (req: any, res: any) => {
 
   if (lineError) {
     addLog(`[LINE-LOGIN] User cancelled: ${lineError}`);
-    return res.redirect('/profile?tab=settings&line_bind=cancelled');
+    return res.redirect(`${FRONTEND_URL}/profile?tab=settings&line_bind=cancelled`);
   }
 
   if (!code || !state || typeof code !== 'string' || typeof state !== 'string') {
-    return res.redirect('/profile?tab=settings&line_bind=error&reason=server');
+    return res.redirect(`${FRONTEND_URL}/profile?tab=settings&line_bind=error&reason=server`);
   }
 
   const stateData = lineLoginStates.get(state);
   if (!stateData || Date.now() > stateData.expiresAt) {
     lineLoginStates.delete(state);
-    return res.redirect('/profile?tab=settings&line_bind=error&reason=expired');
+    return res.redirect(`${FRONTEND_URL}/profile?tab=settings&line_bind=error&reason=expired`);
   }
   lineLoginStates.delete(state); // 一次性使用
 
@@ -1021,7 +1023,7 @@ app.get('/api/auth/line/callback', async (req: any, res: any) => {
     const tokenData = await tokenRes.json() as any;
     if (!tokenData.access_token) {
       addLog(`[LINE-LOGIN] Token exchange failed: ${JSON.stringify(tokenData)}`);
-      return res.redirect('/profile?tab=settings&line_bind=error&reason=token');
+      return res.redirect(`${FRONTEND_URL}/profile?tab=settings&line_bind=error&reason=token`);
     }
 
     // 取得 LINE 用戶資料（拿 userId）
@@ -1030,7 +1032,7 @@ app.get('/api/auth/line/callback', async (req: any, res: any) => {
     });
     const lineProfile = await profileRes.json() as any;
     if (!lineProfile.userId) {
-      return res.redirect('/profile?tab=settings&line_bind=error&reason=profile');
+      return res.redirect(`${FRONTEND_URL}/profile?tab=settings&line_bind=error&reason=profile`);
     }
 
     // 寫入資料庫
@@ -1040,7 +1042,7 @@ app.get('/api/auth/line/callback', async (req: any, res: any) => {
 
     if (dbErr) {
       addLog(`[LINE-LOGIN] DB error: ${dbErr.message}`);
-      return res.redirect('/profile?tab=settings&line_bind=error&reason=db');
+      return res.redirect(`${FRONTEND_URL}/profile?tab=settings&line_bind=error&reason=db`);
     }
 
     addLog(`[LINE-LOGIN] ✅ Bound LINE ${lineProfile.userId} → platform user ${stateData.userId}`);
@@ -1052,10 +1054,10 @@ app.get('/api/auth/line/callback', async (req: any, res: any) => {
       detail: `LINE 帳號綁定成功（LINE Login OAuth）`,
     });
 
-    res.redirect('/profile?tab=settings&line_bind=success');
+    res.redirect(`${FRONTEND_URL}/profile?tab=settings&line_bind=success`);
   } catch (err: any) {
     addLog(`[LINE-LOGIN] Callback error: ${err.message}`);
-    res.redirect('/profile?tab=settings&line_bind=error&reason=server');
+    res.redirect(`${FRONTEND_URL}/profile?tab=settings&line_bind=error&reason=server`);
   }
 });
 
