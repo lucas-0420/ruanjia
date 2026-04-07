@@ -186,21 +186,25 @@ export default function Navbar() {
       {/* ══════════════════════════════
           手機底部導覽列 (md 以上隱藏、物件詳細頁隱藏)
       ══════════════════════════════ */}
-      <nav className={cn(
-        'md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#FFF8F0]/95 backdrop-blur-md border-t border-[#E5D5C5] safe-area-pb',
-        p.startsWith('/property/') && 'hidden',
-      )}>
-        {/* iOS 安全區域支援 */}
+      <nav
+        className={cn(
+          'md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#FFF8F0]/95 backdrop-blur-md border-t border-[#E5D5C5]',
+          p.startsWith('/property/') && 'hidden',
+        )}
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        {/* 登入後：首頁 / 找房 / 訊息（帶未讀） / 我的
+            未登入：首頁 / 找房 / 收藏 / 我的 */}
         <div className="flex items-stretch relative">
           <BottomTab to="/"         icon={Home}   label="首頁" active={p === '/'} />
           <BottomTab to="/listings" icon={Search} label="找房" active={p === '/listings'} />
-          <BottomTab to="/favorites" icon={Heart} label="收藏" active={p === '/favorites'} />
-          {/* 訊息 Tab（登入後顯示，帶未讀 badge） */}
+
           {user ? (
-            <div className="flex-1 relative">
+            /* 訊息 Tab + 未讀 badge */
+            <div className="flex-1 relative flex">
               <BottomTab to="/messages" icon={MessageSquare} label="訊息" active={p === '/messages'} />
               {unreadCount > 0 && (
-                <span className="absolute top-2 left-1/2 ml-2 w-4 h-4 rounded-full bg-[#F5A623] text-white text-[9px] flex items-center justify-center font-black pointer-events-none">
+                <span className="absolute top-2 left-[calc(50%+8px)] w-4 h-4 rounded-full bg-[#F5A623] text-white text-[9px] flex items-center justify-center font-black pointer-events-none">
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
@@ -208,6 +212,7 @@ export default function Navbar() {
           ) : (
             <BottomTab to="/favorites" icon={Heart} label="收藏" active={p === '/favorites'} />
           )}
+
           <BottomTab
             to={user ? '/profile' : undefined}
             icon={User}
@@ -216,8 +221,6 @@ export default function Navbar() {
             onClick={!user ? login : undefined}
           />
         </div>
-        {/* iOS Home Indicator 留白 */}
-        <div className="h-safe-bottom bg-[#FFF8F0]" />
       </nav>
     </>
   );
