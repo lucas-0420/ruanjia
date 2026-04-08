@@ -191,6 +191,7 @@ export default function Listings() {
             <MapComponent
               properties={filteredProperties}
               showMapTypeControl={true}
+              enableClustering={true}
               onPropertyClick={(property) => {
                 console.log('Clicked property:', property.title);
               }}

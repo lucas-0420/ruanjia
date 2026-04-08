@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { APIProvider, Map, InfoWindow, useMap } from '@vis.gl/react-google-maps';
+import { MarkerClusterer, GridAlgorithm } from '@googlemaps/markerclusterer';
 import { Property } from '../types';
 import { Home, Navigation, Search, X } from 'lucide-react';
 
@@ -7,12 +8,13 @@ interface MapComponentProps {
   properties: Property[];
   onPropertyClick?: (property: Property) => void;
   showSearch?: boolean;
-  showMapTypeControl?: boolean; // 是否顯示衛星/地圖切換，預設 false
+  showMapTypeControl?: boolean;
+  enableClustering?: boolean; // 是否啟用聚合，找房地圖用
 }
 
 const API_KEY = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY || '';
 
-export default function MapComponent({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false }: MapComponentProps) {
+export default function MapComponent({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false, enableClustering = false }: MapComponentProps) {
   if (!API_KEY) {
     return (
       <div className="w-full h-full bg-gray-100 rounded-[40px] flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-gray-200">
@@ -30,15 +32,86 @@ export default function MapComponent({ properties, onPropertyClick, showSearch =
   return (
     <div className="w-full h-full rounded-[40px] overflow-hidden shadow-2xl border border-gray-100 relative">
       <APIProvider apiKey={API_KEY} libraries={['places']}>
-        <MapInner properties={properties} onPropertyClick={onPropertyClick} showSearch={showSearch} showMapTypeControl={showMapTypeControl} />
+        <MapInner properties={properties} onPropertyClick={onPropertyClick} showSearch={showSearch} showMapTypeControl={showMapTypeControl} enableClustering={enableClustering} />
       </APIProvider>
     </div>
   );
 }
 
-function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false }: MapComponentProps) {
+function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false, enableClustering = false }: MapComponentProps) {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const map = useMap();
+  const clustererRef = useRef<MarkerClusterer | null>(null);
+  const markersRef = useRef<Record<string, google.maps.Marker>>({});
+
+  // 聚合邏輯：找房地圖啟用時，建立 MarkerClusterer
+  useEffect(() => {
+    if (!map || !enableClustering) return;
+
+    // 清除舊 clusterer
+    if (clustererRef.current) {
+      clustererRef.current.clearMarkers();
+      clustererRef.current = null;
+    }
+    Object.values(markersRef.current).forEach(m => m.setMap(null));
+    markersRef.current = {};
+
+    // 建立各物件的 marker
+    const markers = properties.map(property => {
+      const label = `$${(property.price / 10000).toFixed(1)}萬`;
+      const marker = new google.maps.Marker({
+        position: { lat: property.location.lat, lng: property.location.lng },
+        title: property.title,
+        icon: {
+          url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="68" height="30">
+              <rect x="1" y="1" width="66" height="22" rx="11" fill="white" stroke="#E8650A" stroke-width="2"/>
+              <text x="34" y="16" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="#1a1a1a">${label}</text>
+              <polygon points="29,23 39,23 34,30" fill="#E8650A"/>
+            </svg>`
+          )}`,
+          scaledSize: new google.maps.Size(68, 30),
+          anchor: new google.maps.Point(34, 30),
+        },
+      });
+      marker.addListener('click', () => {
+        setSelectedProperty(property);
+        onPropertyClick?.(property);
+      });
+      markersRef.current[property.id] = marker;
+      return marker;
+    });
+
+    // 建立 clusterer，5段縮放聚合
+    clustererRef.current = new MarkerClusterer({
+      map,
+      markers,
+      algorithm: new GridAlgorithm({ gridSize: 60, maxZoom: 14 }),
+      renderer: {
+        render: ({ count, position }) => {
+          const size = count > 100 ? 56 : count > 20 ? 48 : count > 5 ? 40 : 34;
+          const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
+            <circle cx="${size/2}" cy="${size/2}" r="${size/2-2}" fill="#FFB830" fill-opacity="0.9" stroke="white" stroke-width="2"/>
+            <text x="${size/2}" y="${size/2+4}" text-anchor="middle" font-size="12" font-weight="700" font-family="sans-serif" fill="white">${count}</text>
+          </svg>`;
+          return new google.maps.Marker({
+            position,
+            icon: {
+              url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+              scaledSize: new google.maps.Size(size, size),
+              anchor: new google.maps.Point(size/2, size/2),
+            },
+            zIndex: 1000,
+          });
+        },
+      },
+    });
+
+    return () => {
+      clustererRef.current?.clearMarkers();
+      Object.values(markersRef.current).forEach(m => m.setMap(null));
+    };
+  }, [map, enableClustering, properties]);
 
   // Auto-fit: single property → zoom 15 on it; multiple → fitBounds all markers
   useEffect(() => {
@@ -83,7 +156,7 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
         streetViewControl={false}
         mapTypeControlOptions={{ style: 0, position: 6 }}
       >
-        {properties.map(property => (
+        {!enableClustering && properties.map(property => (
           <PropertyMarker
             key={property.id}
             property={property}
