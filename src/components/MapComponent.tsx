@@ -79,7 +79,9 @@ function MapInner({ properties, onPropertyClick, showSearch = true }: MapCompone
         defaultZoom={7}
         mapId="DEMO_MAP_ID"
         gestureHandling="greedy"
-        disableDefaultUI={false}
+        disableDefaultUI={true}
+        zoomControl={true}
+        fullscreenControl={true}
       >
         {properties.map(property => (
           <PropertyMarker
