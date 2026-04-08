@@ -1,16 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { APIProvider, Map, AdvancedMarker, InfoWindow, useAdvancedMarkerRef, useMap } from '@vis.gl/react-google-maps';
+import { APIProvider, Map, InfoWindow, useMap } from '@vis.gl/react-google-maps';
 import { Property } from '../types';
 import { Home, Navigation, Search, X } from 'lucide-react';
 
 interface MapComponentProps {
   properties: Property[];
   onPropertyClick?: (property: Property) => void;
+  showSearch?: boolean; // 是否顯示搜尋欄，預設 true
 }
 
 const API_KEY = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY || '';
 
-export default function MapComponent({ properties, onPropertyClick }: MapComponentProps) {
+export default function MapComponent({ properties, onPropertyClick, showSearch = true }: MapComponentProps) {
   if (!API_KEY) {
     return (
       <div className="w-full h-full bg-gray-100 rounded-[40px] flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-gray-200">
@@ -28,13 +29,28 @@ export default function MapComponent({ properties, onPropertyClick }: MapCompone
   return (
     <div className="w-full h-full rounded-[40px] overflow-hidden shadow-2xl border border-gray-100 relative">
       <APIProvider apiKey={API_KEY} libraries={['places']}>
-        <MapInner properties={properties} onPropertyClick={onPropertyClick} />
+        <MapInner properties={properties} onPropertyClick={onPropertyClick} showSearch={showSearch} />
       </APIProvider>
     </div>
   );
 }
 
-function MapInner({ properties, onPropertyClick }: MapComponentProps) {
+// 簡潔灰階底圖樣式
+const CLEAN_MAP_STYLES: google.maps.MapTypeStyle[] = [
+  { elementType: 'geometry', stylers: [{ color: '#f5f5f5' }] },
+  { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#616161' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#f5f5f5' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
+  { featureType: 'road.arterial', elementType: 'labels.text.fill', stylers: [{ color: '#757575' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#dadada' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#c9d8e8' }] },
+  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#9e9e9e' }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+];
+
+function MapInner({ properties, onPropertyClick, showSearch = true }: MapComponentProps) {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const map = useMap();
 
@@ -76,15 +92,16 @@ function MapInner({ properties, onPropertyClick }: MapComponentProps) {
       <Map
         defaultCenter={{ lat: 23.9, lng: 121.0 }} // 台灣中心，fitBounds 後會覆蓋
         defaultZoom={7}
-        mapId="DEMO_MAP_ID"
         gestureHandling="greedy"
-        disableDefaultUI={false}
+        disableDefaultUI={true}
+        zoomControl={true}
+        styles={CLEAN_MAP_STYLES}
       >
         {properties.map(property => (
           <PropertyMarker
             key={property.id}
             property={property}
-            onClick={() => { setSelectedProperty(property); onPropertyClick?.(property); }}
+            onClick={() => { setSelectedProperty(p => p?.id === property.id ? null : property); onPropertyClick?.(property); }}
           />
         ))}
 
@@ -115,14 +132,16 @@ function MapInner({ properties, onPropertyClick }: MapComponentProps) {
         )}
       </Map>
 
-      {/* Search Bar */}
-      <div className="absolute top-6 left-6 right-6 md:right-auto md:w-96 z-10">
-        <GeoSearch onSearch={(lat, lng) => {
-          if (!map) return;
-          map.panTo({ lat, lng });
-          map.setZoom(15);
-        }} />
-      </div>
+      {/* Search Bar：僅在 showSearch=true 時顯示 */}
+      {showSearch && (
+        <div className="absolute top-6 left-6 right-6 md:right-auto md:w-96 z-10">
+          <GeoSearch onSearch={(lat, lng) => {
+            if (!map) return;
+            map.panTo({ lat, lng });
+            map.setZoom(15);
+          }} />
+        </div>
+      )}
 
       {/* Locate Me */}
       <button
@@ -187,23 +206,33 @@ function GeoSearch({ onSearch }: { onSearch: (lat: number, lng: number) => void 
 }
 
 function PropertyMarker({ property, onClick }: { property: Property; onClick: () => void; key?: string }) {
-  const [markerRef] = useAdvancedMarkerRef();
+  const map = useMap();
+  const markerRef = useRef<google.maps.Marker | null>(null);
 
-  return (
-    <AdvancedMarker
-      ref={markerRef}
-      position={{ lat: property.location.lat, lng: property.location.lng }}
-      onClick={onClick}
-      title={property.title}
-    >
-      <div className="relative group">
-        <div className="bg-white px-2 py-1 rounded-full shadow-lg border-2 border-orange-600 flex items-center gap-1 transform transition-transform group-hover:scale-110">
-          <span className="text-[10px] font-bold text-gray-900">
-            ${(property.price / 10000).toFixed(1)}萬
-          </span>
-        </div>
-        <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-orange-600 mx-auto -mt-0.5" />
-      </div>
-    </AdvancedMarker>
-  );
+  useEffect(() => {
+    if (!map) return;
+    // 建立自訂 HTML 標記
+    const label = `${(property.price / 10000).toFixed(1)}萬`;
+    const marker = new google.maps.Marker({
+      position: { lat: property.location.lat, lng: property.location.lng },
+      map,
+      title: property.title,
+      icon: {
+        url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
+          <svg xmlns="http://www.w3.org/2000/svg" width="64" height="28">
+            <rect x="0" y="0" width="64" height="22" rx="11" fill="white" stroke="#E8650A" stroke-width="2"/>
+            <text x="32" y="15" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="#1a1a1a">${label}</text>
+            <polygon points="28,22 36,22 32,28" fill="#E8650A"/>
+          </svg>
+        `)}`,
+        scaledSize: new google.maps.Size(64, 28),
+        anchor: new google.maps.Point(32, 28),
+      },
+    });
+    marker.addListener('click', onClick);
+    markerRef.current = marker;
+    return () => { marker.setMap(null); };
+  }, [map, property.location.lat, property.location.lng, property.price]);
+
+  return null;
 }

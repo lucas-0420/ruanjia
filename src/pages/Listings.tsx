@@ -188,8 +188,9 @@ export default function Listings() {
           <PropertyGrid properties={filteredProperties} distanceMap={distanceMap} />
         ) : (
           <div className="h-[700px] w-full">
-            <MapComponent 
-              properties={filteredProperties} 
+            <MapComponent
+              properties={filteredProperties}
+              showSearch={false}
               onPropertyClick={(property) => {
                 console.log('Clicked property:', property.title);
               }}
