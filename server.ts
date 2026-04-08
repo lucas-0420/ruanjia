@@ -652,23 +652,36 @@ app.get('/api/admin/properties', adminLimiter, requireAdmin, async (req, res) =>
 
 // Image upload API (service role bypasses storage RLS)
 app.post('/api/upload/image', writeLimiter, express.raw({ type: () => true, limit: '55mb' }), async (req: any, res: any) => {
-  const token = req.headers['authorization']?.replace('Bearer ', '');
-  if (!token) return res.status(401).json({ error: '未授權' });
-  const uploadUser = await verifyToken(token);
-  if (!uploadUser) return res.status(401).json({ error: 'Token 無效' });
+  try {
+    const token = req.headers['authorization']?.replace('Bearer ', '');
+    if (!token) return res.status(401).json({ error: '未授權' });
+    const uploadUser = await verifyToken(token);
+    if (!uploadUser) return res.status(401).json({ error: 'Token 無效' });
 
-  const mimeType = ((req.headers['content-type'] as string) || 'image/jpeg').split(';')[0].trim();
-  // 白名單：只允許圖片格式，防止上傳惡意檔案
-  const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-  if (!ALLOWED_MIMES.includes(mimeType)) {
-    return res.status(400).json({ error: '不支援的檔案格式，請上傳 JPG/PNG/WEBP/GIF' });
+    const mimeType = ((req.headers['content-type'] as string) || 'image/jpeg').split(';')[0].trim();
+    // 白名單：只允許圖片格式，防止上傳惡意檔案
+    const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!ALLOWED_MIMES.includes(mimeType)) {
+      return res.status(400).json({ error: '不支援的檔案格式，請上傳 JPG/PNG/WEBP/GIF' });
+    }
+
+    const bodySize = req.body?.length || 0;
+    console.log(`[UPLOAD] mimeType=${mimeType} bodySize=${bodySize}`);
+    if (!bodySize) return res.status(400).json({ error: '檔案內容為空，請重新上傳' });
+
+    const ext = mimeType.split('/')[1]?.split('+')[0] || 'jpg';
+    const fileName = `properties/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const { error } = await supabase.storage.from('property-images').upload(fileName, req.body, { contentType: mimeType });
+    if (error) {
+      console.error('[UPLOAD] Storage error:', error.message);
+      return res.status(500).json({ error: `圖片上傳失敗：${error.message}` });
+    }
+    const { data } = supabase.storage.from('property-images').getPublicUrl(fileName);
+    res.json({ url: data.publicUrl });
+  } catch (err: any) {
+    console.error('[UPLOAD] Unexpected error:', err);
+    res.status(500).json({ error: err?.message || '上傳發生未知錯誤' });
   }
-  const ext = mimeType.split('/')[1]?.split('+')[0] || 'jpg';
-  const fileName = `properties/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-  const { error } = await supabase.storage.from('property-images').upload(fileName, req.body, { contentType: mimeType });
-  if (error) return res.status(500).json({ error: '圖片上傳失敗，請稍後再試' });
-  const { data } = supabase.storage.from('property-images').getPublicUrl(fileName);
-  res.json({ url: data.publicUrl });
 });
 
 // Public user profile (no auth needed, only exposes safe fields)
