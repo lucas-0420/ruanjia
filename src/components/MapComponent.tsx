@@ -70,8 +70,8 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
     if (!map || !enableClustering) return;
     clearAll();
 
-    // ── 層一：zoom < 10，行政區泡泡 ──
-    if (zoom < 10) {
+    // ── 層一：zoom < 13，行政區泡泡 ──
+    if (zoom < 13) {
       const districtMap: Record<string, { count: number; lat: number; lng: number }> = {};
       properties.forEach(p => {
         const d = p.location.district || '未知';
@@ -100,14 +100,14 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
           },
           zIndex: 1000,
         });
-        marker.addListener('click', () => { map.setZoom(12); map.panTo({ lat, lng }); });
+        marker.addListener('click', () => { map.setZoom(14); map.panTo({ lat, lng }); });
         return marker;
       });
       return;
     }
 
-    // ── 層二：zoom 10-13，MarkerClusterer 聚合 ──
-    if (zoom < 14) {
+    // ── 層二：zoom 13-15，MarkerClusterer 聚合 ──
+    if (zoom < 16) {
       const markers = properties.map(property => {
         const label = `$${(property.price / 10000).toFixed(1)}萬`;
         const marker = new google.maps.Marker({
@@ -132,7 +132,7 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
 
       clustererRef.current = new MarkerClusterer({
         map, markers,
-        algorithm: new GridAlgorithm({ gridSize: 60, maxZoom: 13 }),
+        algorithm: new GridAlgorithm({ gridSize: 60, maxZoom: 15 }),
         renderer: {
           render: ({ count, position }) => {
             const size = count > 100 ? 56 : count > 20 ? 48 : count > 5 ? 40 : 34;
@@ -155,7 +155,7 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
       return;
     }
 
-    // ── 層三：zoom >= 14，個別物件標記 ──
+    // ── 層三：zoom >= 16，個別物件標記 ──
     properties.forEach(property => {
       const label = `$${(property.price / 10000).toFixed(1)}萬`;
       const marker = new google.maps.Marker({
