@@ -87,6 +87,7 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
           <PropertyMarker
             key={property.id}
             property={property}
+            isSingle={properties.length === 1}
             onClick={() => { setSelectedProperty(property); onPropertyClick?.(property); }}
           />
         ))}
@@ -191,28 +192,31 @@ function GeoSearch({ onSearch }: { onSearch: (lat: number, lng: number) => void 
   );
 }
 
-function PropertyMarker({ property, onClick }: { property: Property; onClick: () => void; key?: string }) {
+function PropertyMarker({ property, onClick, isSingle }: { property: Property; onClick: () => void; isSingle?: boolean; key?: string }) {
   const map = useMap();
   const markerRef = useRef<google.maps.Marker | null>(null);
 
   useEffect(() => {
     if (!map) return;
     const label = `$${(property.price / 10000).toFixed(1)}萬`;
+    const icon = isSingle
+      ? undefined // 單一物件用 Google 預設紅色 pin
+      : {
+          url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="68" height="30">
+              <rect x="1" y="1" width="66" height="22" rx="11" fill="white" stroke="#E8650A" stroke-width="2"/>
+              <text x="34" y="16" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="#1a1a1a">${label}</text>
+              <polygon points="29,23 39,23 34,30" fill="#E8650A"/>
+            </svg>`
+          )}`,
+          scaledSize: new google.maps.Size(68, 30),
+          anchor: new google.maps.Point(34, 30),
+        };
     const marker = new google.maps.Marker({
       position: { lat: property.location.lat, lng: property.location.lng },
       map,
       title: property.title,
-      icon: {
-        url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
-          `<svg xmlns="http://www.w3.org/2000/svg" width="68" height="30">
-            <rect x="1" y="1" width="66" height="22" rx="11" fill="white" stroke="#E8650A" stroke-width="2"/>
-            <text x="34" y="16" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="#1a1a1a">${label}</text>
-            <polygon points="29,23 39,23 34,30" fill="#E8650A"/>
-          </svg>`
-        )}`,
-        scaledSize: new google.maps.Size(68, 30),
-        anchor: new google.maps.Point(34, 30),
-      },
+      icon,
     });
     marker.addListener('click', onClick);
     markerRef.current = marker;
