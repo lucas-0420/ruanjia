@@ -67,6 +67,9 @@ export default function Listings() {
   const [searchQuery, setSearchQuery] = React.useState(initialQ);
   const [filters, setFilters] = React.useState<Filters>({ ...DEFAULT_FILTERS, ...initialFilters });
   const [mapBounds, setMapBounds] = React.useState<{ north: number; south: number; east: number; west: number } | null>(null);
+  const handleBoundsChange = React.useCallback((b: { north: number; south: number; east: number; west: number }) => {
+    setMapBounds(b);
+  }, []);
   const [distanceCenter, setDistanceCenter] = React.useState<{ lat: number; lng: number } | null>(null);
   const { properties, loading } = useFirebase();
 
@@ -223,7 +226,7 @@ export default function Listings() {
                 properties={filteredProperties}
                 showMapTypeControl={true}
                 enableClustering={true}
-                onBoundsChange={setMapBounds}
+                onBoundsChange={handleBoundsChange}
                 onPropertyClick={(property) => {
                   window.open(`/property/${property.id}`, '_blank');
                 }}

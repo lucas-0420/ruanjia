@@ -51,22 +51,24 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
   const districtMarkersRef = useRef<google.maps.Marker[]>([]);
   const individualMarkersRef = useRef<google.maps.Marker[]>([]);
 
-  // 監聽縮放與移動，回傳 bounds
+  // 監聽縮放（才重建 markers）
   useEffect(() => {
     if (!map) return;
+    const z = map.addListener('zoom_changed', () => setZoom(map.getZoom() ?? 7));
+    return () => google.maps.event.removeListener(z);
+  }, [map]);
+
+  // 監聽移動與縮放，回傳 bounds（不觸發 marker 重建）
+  useEffect(() => {
+    if (!map || !onBoundsChange) return;
     const updateBounds = () => {
-      setZoom(map.getZoom() ?? 7);
-      if (onBoundsChange) {
-        const b = map.getBounds();
-        if (b) {
-          onBoundsChange({
-            north: b.getNorthEast().lat(),
-            south: b.getSouthWest().lat(),
-            east: b.getNorthEast().lng(),
-            west: b.getSouthWest().lng(),
-          });
-        }
-      }
+      const b = map.getBounds();
+      if (b) onBoundsChange({
+        north: b.getNorthEast().lat(),
+        south: b.getSouthWest().lat(),
+        east: b.getNorthEast().lng(),
+        west: b.getSouthWest().lng(),
+      });
     };
     const z = map.addListener('zoom_changed', updateBounds);
     const d = map.addListener('dragend', updateBounds);
