@@ -528,7 +528,7 @@ export default function PropertyDetail() {
               </div>
               <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
                 <div className="flex-1 min-h-[240px] md:min-h-0">
-                  <MapComponent properties={[property]} />
+                  <MapComponent properties={[property]} showMapTypeControl={true} />
                 </div>
                 <div className="w-full md:w-72 shrink-0 border-t md:border-t-0 md:border-l border-[#E5D5C5] overflow-hidden flex flex-col">
                   <NearbyPlacesPanel lat={property.location.lat} lng={property.location.lng} className="flex-1" />
