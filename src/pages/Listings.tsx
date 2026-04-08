@@ -190,7 +190,7 @@ export default function Listings() {
           <div className="h-[700px] w-full">
             <MapComponent
               properties={filteredProperties}
-              showSearch={false}
+              showMapTypeControl={true}
               onPropertyClick={(property) => {
                 console.log('Clicked property:', property.title);
               }}

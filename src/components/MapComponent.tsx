@@ -6,12 +6,13 @@ import { Home, Navigation, Search, X } from 'lucide-react';
 interface MapComponentProps {
   properties: Property[];
   onPropertyClick?: (property: Property) => void;
-  showSearch?: boolean; // 是否顯示搜尋欄，預設 true
+  showSearch?: boolean;
+  showMapTypeControl?: boolean; // 是否顯示衛星/地圖切換，預設 false
 }
 
 const API_KEY = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY || '';
 
-export default function MapComponent({ properties, onPropertyClick, showSearch = true }: MapComponentProps) {
+export default function MapComponent({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false }: MapComponentProps) {
   if (!API_KEY) {
     return (
       <div className="w-full h-full bg-gray-100 rounded-[40px] flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-gray-200">
@@ -29,13 +30,13 @@ export default function MapComponent({ properties, onPropertyClick, showSearch =
   return (
     <div className="w-full h-full rounded-[40px] overflow-hidden shadow-2xl border border-gray-100 relative">
       <APIProvider apiKey={API_KEY} libraries={['places']}>
-        <MapInner properties={properties} onPropertyClick={onPropertyClick} showSearch={showSearch} />
+        <MapInner properties={properties} onPropertyClick={onPropertyClick} showSearch={showSearch} showMapTypeControl={showMapTypeControl} />
       </APIProvider>
     </div>
   );
 }
 
-function MapInner({ properties, onPropertyClick, showSearch = true }: MapComponentProps) {
+function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false }: MapComponentProps) {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const map = useMap();
 
@@ -82,7 +83,8 @@ function MapInner({ properties, onPropertyClick, showSearch = true }: MapCompone
         zoomControl={true}
         fullscreenControl={true}
         renderingType="RASTER"
-        mapTypeControl={false}
+        mapTypeControl={showMapTypeControl}
+        mapTypeControlOptions={{ style: 2, position: 3 }}
       >
         {properties.map(property => (
           <PropertyMarker
