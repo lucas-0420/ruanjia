@@ -51,10 +51,14 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
   const districtMarkersRef = useRef<google.maps.Marker[]>([]);
   const individualMarkersRef = useRef<google.maps.Marker[]>([]);
 
-  // 監聽縮放（才重建 markers）
+  // 只在跨越層級閾值時才更新 zoom（避免每格縮放都重建 markers）
+  const getLayer = (z: number) => z < 14 ? 1 : z < 17 ? 2 : 3;
   useEffect(() => {
     if (!map) return;
-    const z = map.addListener('zoom_changed', () => setZoom(map.getZoom() ?? 7));
+    const z = map.addListener('zoom_changed', () => {
+      const newZoom = map.getZoom() ?? 7;
+      setZoom(prev => getLayer(prev) !== getLayer(newZoom) ? newZoom : prev);
+    });
     return () => google.maps.event.removeListener(z);
   }, [map]);
 
