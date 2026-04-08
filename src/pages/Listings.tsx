@@ -66,6 +66,7 @@ export default function Listings() {
   const [viewMode, setViewMode] = React.useState<'grid' | 'map'>('grid');
   const [searchQuery, setSearchQuery] = React.useState(initialQ);
   const [filters, setFilters] = React.useState<Filters>({ ...DEFAULT_FILTERS, ...initialFilters });
+  const [mapBounds, setMapBounds] = React.useState<{ north: number; south: number; east: number; west: number } | null>(null);
   const [distanceCenter, setDistanceCenter] = React.useState<{ lat: number; lng: number } | null>(null);
   const { properties, loading } = useFirebase();
 
@@ -187,15 +188,47 @@ export default function Listings() {
         {viewMode === 'grid' ? (
           <PropertyGrid properties={filteredProperties} distanceMap={distanceMap} />
         ) : (
-          <div className="h-[700px] w-full">
-            <MapComponent
-              properties={filteredProperties}
-              showMapTypeControl={true}
-              enableClustering={true}
-              onPropertyClick={(property) => {
-                console.log('Clicked property:', property.title);
-              }}
-            />
+          <div className="flex gap-4 h-[calc(100vh-180px)]">
+            {/* 左側：地圖範圍內的物件列表 */}
+            <div className="w-80 shrink-0 overflow-y-auto flex flex-col gap-3 pr-1">
+              {(() => {
+                const inBounds = mapBounds
+                  ? filteredProperties.filter(p =>
+                      p.location.lat <= mapBounds.north &&
+                      p.location.lat >= mapBounds.south &&
+                      p.location.lng <= mapBounds.east &&
+                      p.location.lng >= mapBounds.west
+                    )
+                  : filteredProperties;
+                return inBounds.length === 0 ? (
+                  <p className="text-sm text-gray-400 text-center pt-8">此範圍內無物件</p>
+                ) : inBounds.map(p => (
+                  <a key={p.id} href={`/property/${p.id}`} target="_blank" rel="noopener noreferrer"
+                    className="flex gap-3 p-3 bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-orange-200 transition-all"
+                  >
+                    <img src={p.images[0]} alt={p.title} className="w-20 h-20 object-cover rounded-xl shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-gray-900 truncate">{p.title}</p>
+                      <p className="text-xs text-gray-500 truncate mt-0.5">{p.location.district} · {p.features.area}坪</p>
+                      <p className="text-sm font-bold text-orange-600 mt-1">{p.price.toLocaleString()} 元/月</p>
+                    </div>
+                  </a>
+                ));
+              })()}
+            </div>
+
+            {/* 右側：地圖 */}
+            <div className="flex-1">
+              <MapComponent
+                properties={filteredProperties}
+                showMapTypeControl={true}
+                enableClustering={true}
+                onBoundsChange={setMapBounds}
+                onPropertyClick={(property) => {
+                  window.open(`/property/${property.id}`, '_blank');
+                }}
+              />
+            </div>
           </div>
         )}
       </div>

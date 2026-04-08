@@ -4,17 +4,22 @@ import { MarkerClusterer, GridAlgorithm } from '@googlemaps/markerclusterer';
 import { Property } from '../types';
 import { Home, Navigation, Search, X } from 'lucide-react';
 
+interface MapBounds {
+  north: number; south: number; east: number; west: number;
+}
+
 interface MapComponentProps {
   properties: Property[];
   onPropertyClick?: (property: Property) => void;
   showSearch?: boolean;
   showMapTypeControl?: boolean;
-  enableClustering?: boolean; // 是否啟用聚合，找房地圖用
+  enableClustering?: boolean;
+  onBoundsChange?: (bounds: MapBounds) => void; // 地圖範圍變化回呼
 }
 
 const API_KEY = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY || '';
 
-export default function MapComponent({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false, enableClustering = false }: MapComponentProps) {
+export default function MapComponent({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false, enableClustering = false, onBoundsChange }: MapComponentProps) {
   if (!API_KEY) {
     return (
       <div className="w-full h-full bg-gray-100 rounded-[40px] flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-gray-200">
@@ -32,13 +37,13 @@ export default function MapComponent({ properties, onPropertyClick, showSearch =
   return (
     <div className="w-full h-full rounded-[40px] overflow-hidden shadow-2xl border border-gray-100 relative">
       <APIProvider apiKey={API_KEY} libraries={['places']}>
-        <MapInner properties={properties} onPropertyClick={onPropertyClick} showSearch={showSearch} showMapTypeControl={showMapTypeControl} enableClustering={enableClustering} />
+        <MapInner properties={properties} onPropertyClick={onPropertyClick} showSearch={showSearch} showMapTypeControl={showMapTypeControl} enableClustering={enableClustering} onBoundsChange={onBoundsChange} />
       </APIProvider>
     </div>
   );
 }
 
-function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false, enableClustering = false }: MapComponentProps) {
+function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false, enableClustering = false, onBoundsChange }: MapComponentProps) {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [zoom, setZoom] = useState<number>(7);
   const map = useMap();
@@ -46,14 +51,30 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
   const districtMarkersRef = useRef<google.maps.Marker[]>([]);
   const individualMarkersRef = useRef<google.maps.Marker[]>([]);
 
-  // 監聽縮放等級
+  // 監聽縮放與移動，回傳 bounds
   useEffect(() => {
-    if (!map || !enableClustering) return;
-    const listener = map.addListener('zoom_changed', () => {
+    if (!map) return;
+    const updateBounds = () => {
       setZoom(map.getZoom() ?? 7);
-    });
-    return () => google.maps.event.removeListener(listener);
-  }, [map, enableClustering]);
+      if (onBoundsChange) {
+        const b = map.getBounds();
+        if (b) {
+          onBoundsChange({
+            north: b.getNorthEast().lat(),
+            south: b.getSouthWest().lat(),
+            east: b.getNorthEast().lng(),
+            west: b.getSouthWest().lng(),
+          });
+        }
+      }
+    };
+    const z = map.addListener('zoom_changed', updateBounds);
+    const d = map.addListener('dragend', updateBounds);
+    return () => {
+      google.maps.event.removeListener(z);
+      google.maps.event.removeListener(d);
+    };
+  }, [map, onBoundsChange]);
 
   // 清除所有 markers
   const clearAll = () => {
