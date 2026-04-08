@@ -40,28 +40,127 @@ export default function MapComponent({ properties, onPropertyClick, showSearch =
 
 function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false, enableClustering = false }: MapComponentProps) {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
+  const [zoom, setZoom] = useState<number>(7);
   const map = useMap();
   const clustererRef = useRef<MarkerClusterer | null>(null);
-  const markersRef = useRef<Record<string, google.maps.Marker>>({});
+  const districtMarkersRef = useRef<google.maps.Marker[]>([]);
+  const individualMarkersRef = useRef<google.maps.Marker[]>([]);
 
-  // 聚合邏輯：找房地圖啟用時，建立 MarkerClusterer
+  // 監聽縮放等級
   useEffect(() => {
     if (!map || !enableClustering) return;
+    const listener = map.addListener('zoom_changed', () => {
+      setZoom(map.getZoom() ?? 7);
+    });
+    return () => google.maps.event.removeListener(listener);
+  }, [map, enableClustering]);
 
-    // 清除舊 clusterer
-    if (clustererRef.current) {
-      clustererRef.current.clearMarkers();
-      clustererRef.current = null;
+  // 清除所有 markers
+  const clearAll = () => {
+    clustererRef.current?.clearMarkers();
+    clustererRef.current = null;
+    districtMarkersRef.current.forEach(m => m.setMap(null));
+    districtMarkersRef.current = [];
+    individualMarkersRef.current.forEach(m => m.setMap(null));
+    individualMarkersRef.current = [];
+  };
+
+  // 三層顯示邏輯
+  useEffect(() => {
+    if (!map || !enableClustering) return;
+    clearAll();
+
+    // ── 層一：zoom < 10，行政區泡泡 ──
+    if (zoom < 10) {
+      const districtMap: Record<string, { count: number; lat: number; lng: number }> = {};
+      properties.forEach(p => {
+        const d = p.location.district || '未知';
+        if (!districtMap[d]) {
+          districtMap[d] = { count: 0, lat: p.location.lat, lng: p.location.lng };
+        }
+        districtMap[d].count++;
+        // 用平均座標作為泡泡中心
+        districtMap[d].lat = (districtMap[d].lat + p.location.lat) / 2;
+        districtMap[d].lng = (districtMap[d].lng + p.location.lng) / 2;
+      });
+
+      districtMarkersRef.current = Object.entries(districtMap).map(([name, { count, lat, lng }]) => {
+        const w = name.length * 14 + 40;
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="52">
+          <circle cx="${w/2}" cy="26" r="24" fill="#FFB830" fill-opacity="0.92" stroke="white" stroke-width="2"/>
+          <text x="${w/2}" y="21" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="white">${name}</text>
+          <text x="${w/2}" y="36" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="white">${count}間</text>
+        </svg>`;
+        const marker = new google.maps.Marker({
+          position: { lat, lng }, map,
+          icon: {
+            url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+            scaledSize: new google.maps.Size(w, 52),
+            anchor: new google.maps.Point(w / 2, 26),
+          },
+          zIndex: 1000,
+        });
+        marker.addListener('click', () => { map.setZoom(12); map.panTo({ lat, lng }); });
+        return marker;
+      });
+      return;
     }
-    Object.values(markersRef.current).forEach(m => m.setMap(null));
-    markersRef.current = {};
 
-    // 建立各物件的 marker
-    const markers = properties.map(property => {
+    // ── 層二：zoom 10-13，MarkerClusterer 聚合 ──
+    if (zoom < 14) {
+      const markers = properties.map(property => {
+        const label = `$${(property.price / 10000).toFixed(1)}萬`;
+        const marker = new google.maps.Marker({
+          position: { lat: property.location.lat, lng: property.location.lng },
+          title: property.title,
+          icon: {
+            url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+              `<svg xmlns="http://www.w3.org/2000/svg" width="68" height="30">
+                <rect x="1" y="1" width="66" height="22" rx="11" fill="white" stroke="#E8650A" stroke-width="2"/>
+                <text x="34" y="16" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="#1a1a1a">${label}</text>
+                <polygon points="29,23 39,23 34,30" fill="#E8650A"/>
+              </svg>`
+            )}`,
+            scaledSize: new google.maps.Size(68, 30),
+            anchor: new google.maps.Point(34, 30),
+          },
+        });
+        marker.addListener('click', () => { setSelectedProperty(property); onPropertyClick?.(property); });
+        individualMarkersRef.current.push(marker);
+        return marker;
+      });
+
+      clustererRef.current = new MarkerClusterer({
+        map, markers,
+        algorithm: new GridAlgorithm({ gridSize: 60, maxZoom: 13 }),
+        renderer: {
+          render: ({ count, position }) => {
+            const size = count > 100 ? 56 : count > 20 ? 48 : count > 5 ? 40 : 34;
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
+              <circle cx="${size/2}" cy="${size/2}" r="${size/2-2}" fill="#FFB830" fill-opacity="0.9" stroke="white" stroke-width="2"/>
+              <text x="${size/2}" y="${size/2+4}" text-anchor="middle" font-size="12" font-weight="700" font-family="sans-serif" fill="white">${count}</text>
+            </svg>`;
+            return new google.maps.Marker({
+              position,
+              icon: {
+                url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+                scaledSize: new google.maps.Size(size, size),
+                anchor: new google.maps.Point(size/2, size/2),
+              },
+              zIndex: 1000,
+            });
+          },
+        },
+      });
+      return;
+    }
+
+    // ── 層三：zoom >= 14，個別物件標記 ──
+    properties.forEach(property => {
       const label = `$${(property.price / 10000).toFixed(1)}萬`;
       const marker = new google.maps.Marker({
         position: { lat: property.location.lat, lng: property.location.lng },
-        title: property.title,
+        map, title: property.title,
         icon: {
           url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
             `<svg xmlns="http://www.w3.org/2000/svg" width="68" height="30">
@@ -74,44 +173,12 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
           anchor: new google.maps.Point(34, 30),
         },
       });
-      marker.addListener('click', () => {
-        setSelectedProperty(property);
-        onPropertyClick?.(property);
-      });
-      markersRef.current[property.id] = marker;
-      return marker;
+      marker.addListener('click', () => { setSelectedProperty(property); onPropertyClick?.(property); });
+      individualMarkersRef.current.push(marker);
     });
 
-    // 建立 clusterer，5段縮放聚合
-    clustererRef.current = new MarkerClusterer({
-      map,
-      markers,
-      algorithm: new GridAlgorithm({ gridSize: 60, maxZoom: 14 }),
-      renderer: {
-        render: ({ count, position }) => {
-          const size = count > 100 ? 56 : count > 20 ? 48 : count > 5 ? 40 : 34;
-          const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
-            <circle cx="${size/2}" cy="${size/2}" r="${size/2-2}" fill="#FFB830" fill-opacity="0.9" stroke="white" stroke-width="2"/>
-            <text x="${size/2}" y="${size/2+4}" text-anchor="middle" font-size="12" font-weight="700" font-family="sans-serif" fill="white">${count}</text>
-          </svg>`;
-          return new google.maps.Marker({
-            position,
-            icon: {
-              url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
-              scaledSize: new google.maps.Size(size, size),
-              anchor: new google.maps.Point(size/2, size/2),
-            },
-            zIndex: 1000,
-          });
-        },
-      },
-    });
-
-    return () => {
-      clustererRef.current?.clearMarkers();
-      Object.values(markersRef.current).forEach(m => m.setMap(null));
-    };
-  }, [map, enableClustering, properties]);
+    return clearAll;
+  }, [map, enableClustering, properties, zoom]);
 
   // Auto-fit: single property → zoom 15 on it; multiple → fitBounds all markers
   useEffect(() => {
