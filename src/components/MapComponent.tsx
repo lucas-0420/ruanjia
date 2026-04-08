@@ -96,24 +96,30 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
     if (key === lastFitKeyRef.current) return;
     lastFitKeyRef.current = key;
 
-    if (properties.length > 0) {
-      // 有物件：fit 到物件範圍
-      if (properties.length === 1) {
-        map.panTo({ lat: properties[0].location.lat, lng: properties[0].location.lng });
-        map.setZoom(15);
-      } else {
-        const geocoded = properties.filter(
-          p => !(Math.abs(p.location.lat - 25.033) < 0.001 && Math.abs(p.location.lng - 121.5654) < 0.001)
-        );
-        const list = geocoded.length > 0 ? geocoded : properties;
-        const bounds = new google.maps.LatLngBounds();
-        list.forEach(p => bounds.extend({ lat: p.location.lat, lng: p.location.lng }));
-        map.fitBounds(bounds, 80);
-      }
-    } else if (filterCity && CITY_CENTERS[filterCity]) {
-      // 無物件但有選城市：跳到城市中心
+    if (filterDistricts && filterDistricts.length > 0 && properties.length > 0) {
+      // 有選行政區：fit 到篩選出的物件範圍中心
+      const geocoded = properties.filter(
+        p => !(Math.abs(p.location.lat - 25.033) < 0.001 && Math.abs(p.location.lng - 121.5654) < 0.001)
+      );
+      const list = geocoded.length > 0 ? geocoded : properties;
+      const bounds = new google.maps.LatLngBounds();
+      list.forEach(p => bounds.extend({ lat: p.location.lat, lng: p.location.lng }));
+      map.fitBounds(bounds, 80);
+    } else if (filterCity && filterCity !== 'all' && CITY_CENTERS[filterCity]) {
+      // 有選城市（無行政區篩選）：跳到城市中心
       map.panTo(CITY_CENTERS[filterCity]);
       map.setZoom(12);
+    } else if (properties.length === 1) {
+      map.panTo({ lat: properties[0].location.lat, lng: properties[0].location.lng });
+      map.setZoom(15);
+    } else if (properties.length > 1) {
+      const geocoded = properties.filter(
+        p => !(Math.abs(p.location.lat - 25.033) < 0.001 && Math.abs(p.location.lng - 121.5654) < 0.001)
+      );
+      const list = geocoded.length > 0 ? geocoded : properties;
+      const bounds = new google.maps.LatLngBounds();
+      list.forEach(p => bounds.extend({ lat: p.location.lat, lng: p.location.lng }));
+      map.fitBounds(bounds, 80);
     }
   }, [map, properties, filterCity, filterDistricts]);
 
