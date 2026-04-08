@@ -299,7 +299,9 @@ export default function PostProperty() {
           headers: { 'Content-Type': file.type, Authorization: `Bearer ${session.access_token}` },
           body: file,
         });
-        const json = await res.json();
+        const text = await res.text();
+        if (!text) throw new Error(`伺服器回應為空 (HTTP ${res.status})`);
+        const json = JSON.parse(text);
         if (!res.ok) throw new Error(json.error || '上傳失敗');
         return json.url as string;
       }));
