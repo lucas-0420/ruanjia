@@ -15,11 +15,13 @@ interface MapComponentProps {
   showMapTypeControl?: boolean;
   enableClustering?: boolean;
   onBoundsChange?: (bounds: MapBounds) => void;
+  filterCity?: string; // 目前篩選的城市，用來無物件時也能跳轉
+  filterDistricts?: string[]; // 目前篩選的地區
 }
 
 const API_KEY = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY || '';
 
-export default function MapComponent({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false, enableClustering = false, onBoundsChange }: MapComponentProps) {
+export default function MapComponent({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false, enableClustering = false, onBoundsChange, filterCity, filterDistricts }: MapComponentProps) {
   if (!API_KEY) {
     return (
       <div className="w-full h-full bg-gray-100 rounded-[40px] flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-gray-200">
@@ -44,13 +46,15 @@ export default function MapComponent({ properties, onPropertyClick, showSearch =
           showMapTypeControl={showMapTypeControl}
           enableClustering={enableClustering}
           onBoundsChange={onBoundsChange}
+          filterCity={filterCity}
+          filterDistricts={filterDistricts}
         />
       </APIProvider>
     </div>
   );
 }
 
-function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false, enableClustering = false, onBoundsChange }: MapComponentProps) {
+function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false, enableClustering = false, onBoundsChange, filterCity, filterDistricts }: MapComponentProps) {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const map = useMap();
 
@@ -61,29 +65,57 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
   const isDistrictLayerRef = useRef<boolean>(true);
   const lastFitKeyRef = useRef<string>('');
 
-  // Auto-fit：城市或地區改變時重新 fit，拖曳/縮放不觸發
+  // 城市中心座標（無物件時也能跳轉）
+  const CITY_CENTERS: Record<string, { lat: number; lng: number }> = {
+    '台北市': { lat: 25.0330, lng: 121.5654 },
+    '新北市': { lat: 25.0169, lng: 121.4627 },
+    '桃園市': { lat: 24.9936, lng: 121.3010 },
+    '台中市': { lat: 24.1477, lng: 120.6736 },
+    '台南市': { lat: 22.9999, lng: 120.2269 },
+    '高雄市': { lat: 22.6273, lng: 120.3014 },
+    '新竹市': { lat: 24.8138, lng: 120.9675 },
+    '新竹縣': { lat: 24.8384, lng: 121.0177 },
+    '苗栗縣': { lat: 24.5602, lng: 120.8214 },
+    '彰化縣': { lat: 24.0518, lng: 120.5161 },
+    '南投縣': { lat: 23.9610, lng: 120.9718 },
+    '雲林縣': { lat: 23.7092, lng: 120.4313 },
+    '嘉義市': { lat: 23.4801, lng: 120.4491 },
+    '嘉義縣': { lat: 23.4518, lng: 120.2554 },
+    '屏東縣': { lat: 22.5519, lng: 120.5487 },
+    '宜蘭縣': { lat: 24.7021, lng: 121.7377 },
+    '花蓮縣': { lat: 23.9872, lng: 121.6015 },
+    '台東縣': { lat: 22.7972, lng: 121.0714 },
+    '澎湖縣': { lat: 23.5711, lng: 119.5793 },
+    '基隆市': { lat: 25.1276, lng: 121.7392 },
+  };
+
+  // Auto-fit：篩選城市/地區改變時跳轉，拖曳/縮放不觸發
   useEffect(() => {
-    if (!map || properties.length === 0) return;
-    // 用城市+地區組合作為 key，改變才 fit
-    const cities = [...new Set(properties.map(p => p.location.city))].sort().join(',');
-    const districts = [...new Set(properties.map(p => p.location.district))].sort().join(',');
-    const key = `${cities}|${districts}`;
+    if (!map) return;
+    const key = `${filterCity}|${(filterDistricts || []).sort().join(',')}`;
     if (key === lastFitKeyRef.current) return;
     lastFitKeyRef.current = key;
 
-    if (properties.length === 1) {
-      map.panTo({ lat: properties[0].location.lat, lng: properties[0].location.lng });
-      map.setZoom(15);
-    } else {
-      const geocoded = properties.filter(
-        p => !(Math.abs(p.location.lat - 25.033) < 0.001 && Math.abs(p.location.lng - 121.5654) < 0.001)
-      );
-      const list = geocoded.length > 0 ? geocoded : properties;
-      const bounds = new google.maps.LatLngBounds();
-      list.forEach(p => bounds.extend({ lat: p.location.lat, lng: p.location.lng }));
-      map.fitBounds(bounds, 80);
+    if (properties.length > 0) {
+      // 有物件：fit 到物件範圍
+      if (properties.length === 1) {
+        map.panTo({ lat: properties[0].location.lat, lng: properties[0].location.lng });
+        map.setZoom(15);
+      } else {
+        const geocoded = properties.filter(
+          p => !(Math.abs(p.location.lat - 25.033) < 0.001 && Math.abs(p.location.lng - 121.5654) < 0.001)
+        );
+        const list = geocoded.length > 0 ? geocoded : properties;
+        const bounds = new google.maps.LatLngBounds();
+        list.forEach(p => bounds.extend({ lat: p.location.lat, lng: p.location.lng }));
+        map.fitBounds(bounds, 80);
+      }
+    } else if (filterCity && CITY_CENTERS[filterCity]) {
+      // 無物件但有選城市：跳到城市中心
+      map.panTo(CITY_CENTERS[filterCity]);
+      map.setZoom(12);
     }
-  }, [map, properties]);
+  }, [map, properties, filterCity, filterDistricts]);
 
   // bounds 回呼（dragend + zoom_changed），不觸發 marker 重建
   useEffect(() => {

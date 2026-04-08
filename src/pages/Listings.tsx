@@ -227,6 +227,8 @@ export default function Listings() {
                 showMapTypeControl={true}
                 enableClustering={true}
                 onBoundsChange={handleBoundsChange}
+                filterCity={filters.city !== 'all' ? filters.city : undefined}
+                filterDistricts={filters.district.length > 0 ? filters.district : undefined}
                 onPropertyClick={(property) => {
                   window.open(`/property/${property.id}`, '_blank');
                 }}
