@@ -14,7 +14,7 @@ interface MapComponentProps {
   showSearch?: boolean;
   showMapTypeControl?: boolean;
   enableClustering?: boolean;
-  onBoundsChange?: (bounds: MapBounds) => void; // 地圖範圍變化回呼
+  onBoundsChange?: (bounds: MapBounds) => void;
 }
 
 const API_KEY = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY || '';
@@ -37,7 +37,14 @@ export default function MapComponent({ properties, onPropertyClick, showSearch =
   return (
     <div className="w-full h-full rounded-[40px] overflow-hidden shadow-2xl border border-gray-100 relative">
       <APIProvider apiKey={API_KEY} libraries={['places']}>
-        <MapInner properties={properties} onPropertyClick={onPropertyClick} showSearch={showSearch} showMapTypeControl={showMapTypeControl} enableClustering={enableClustering} onBoundsChange={onBoundsChange} />
+        <MapInner
+          properties={properties}
+          onPropertyClick={onPropertyClick}
+          showSearch={showSearch}
+          showMapTypeControl={showMapTypeControl}
+          enableClustering={enableClustering}
+          onBoundsChange={onBoundsChange}
+        />
       </APIProvider>
     </div>
   );
@@ -45,27 +52,35 @@ export default function MapComponent({ properties, onPropertyClick, showSearch =
 
 function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false, enableClustering = false, onBoundsChange }: MapComponentProps) {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
-  const [zoom, setZoom] = useState<number>(7);
   const map = useMap();
+
+  // refs for clustering (避免 React re-render 重建 markers)
   const clustererRef = useRef<MarkerClusterer | null>(null);
-  const districtMarkersRef = useRef<google.maps.Marker[]>([]);
   const individualMarkersRef = useRef<google.maps.Marker[]>([]);
+  const districtMarkersRef = useRef<google.maps.Marker[]>([]);
+  const isDistrictLayerRef = useRef<boolean>(true);
 
-  // 只在跨越層級閾值時才更新 zoom（避免每格縮放都重建 markers）
-  const getLayer = (z: number) => z < 14 ? 1 : z < 17 ? 2 : 3;
+  // Auto-fit
   useEffect(() => {
-    if (!map) return;
-    const z = map.addListener('zoom_changed', () => {
-      const newZoom = map.getZoom() ?? 7;
-      setZoom(prev => getLayer(prev) !== getLayer(newZoom) ? newZoom : prev);
-    });
-    return () => google.maps.event.removeListener(z);
-  }, [map]);
+    if (!map || properties.length === 0) return;
+    if (properties.length === 1) {
+      map.panTo({ lat: properties[0].location.lat, lng: properties[0].location.lng });
+      map.setZoom(15);
+    } else {
+      const geocoded = properties.filter(
+        p => !(Math.abs(p.location.lat - 25.033) < 0.001 && Math.abs(p.location.lng - 121.5654) < 0.001)
+      );
+      const list = geocoded.length > 0 ? geocoded : properties;
+      const bounds = new google.maps.LatLngBounds();
+      list.forEach(p => bounds.extend({ lat: p.location.lat, lng: p.location.lng }));
+      map.fitBounds(bounds, 80);
+    }
+  }, [map, properties]);
 
-  // 監聽移動與縮放，回傳 bounds（不觸發 marker 重建）
+  // bounds 回呼（dragend + zoom_changed），不觸發 marker 重建
   useEffect(() => {
     if (!map || !onBoundsChange) return;
-    const updateBounds = () => {
+    const update = () => {
       const b = map.getBounds();
       if (b) onBoundsChange({
         north: b.getNorthEast().lat(),
@@ -74,120 +89,53 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
         west: b.getSouthWest().lng(),
       });
     };
-    const z = map.addListener('zoom_changed', updateBounds);
-    const d = map.addListener('dragend', updateBounds);
-    return () => {
-      google.maps.event.removeListener(z);
-      google.maps.event.removeListener(d);
-    };
+    const l1 = map.addListener('dragend', update);
+    const l2 = map.addListener('zoom_changed', update);
+    return () => { google.maps.event.removeListener(l1); google.maps.event.removeListener(l2); };
   }, [map, onBoundsChange]);
 
-  // 清除所有 markers
-  const clearAll = () => {
-    clustererRef.current?.clearMarkers();
-    clustererRef.current = null;
-    districtMarkersRef.current.forEach(m => m.setMap(null));
-    districtMarkersRef.current = [];
-    individualMarkersRef.current.forEach(m => m.setMap(null));
-    individualMarkersRef.current = [];
-  };
-
-  // 三層顯示邏輯
+  // 聚合模式：建立所有 markers 一次，透過 setMap 切換層，不重建
   useEffect(() => {
     if (!map || !enableClustering) return;
-    clearAll();
 
-    // ── 層一：zoom < 14，行政區泡泡 ──
-    if (zoom < 14) {
-      const districtMap: Record<string, { count: number; lat: number; lng: number }> = {};
-      properties.forEach(p => {
-        const d = p.location.district || '未知';
-        if (!districtMap[d]) {
-          districtMap[d] = { count: 0, lat: p.location.lat, lng: p.location.lng };
-        }
-        districtMap[d].count++;
-        // 用平均座標作為泡泡中心
-        districtMap[d].lat = (districtMap[d].lat + p.location.lat) / 2;
-        districtMap[d].lng = (districtMap[d].lng + p.location.lng) / 2;
+    // ── 行政區 markers ──
+    const districtMap: Record<string, { count: number; lat: number; lng: number; lats: number[]; lngs: number[] }> = {};
+    properties.forEach(p => {
+      const d = p.location.district || '未知';
+      if (!districtMap[d]) districtMap[d] = { count: 0, lat: 0, lng: 0, lats: [], lngs: [] };
+      districtMap[d].count++;
+      districtMap[d].lats.push(p.location.lat);
+      districtMap[d].lngs.push(p.location.lng);
+    });
+    Object.values(districtMap).forEach(d => {
+      d.lat = d.lats.reduce((a, b) => a + b, 0) / d.lats.length;
+      d.lng = d.lngs.reduce((a, b) => a + b, 0) / d.lngs.length;
+    });
+
+    const dMarkers = Object.entries(districtMap).map(([name, { count, lat, lng }]) => {
+      const w = Math.max(name.length * 13 + 30, 64);
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="52">
+        <circle cx="${w/2}" cy="26" r="24" fill="#FFB830" fill-opacity="0.95" stroke="white" stroke-width="2"/>
+        <text x="${w/2}" y="21" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="white">${name}</text>
+        <text x="${w/2}" y="36" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="white">${count}間</text>
+      </svg>`;
+      const marker = new google.maps.Marker({
+        position: { lat, lng },
+        map: isDistrictLayerRef.current ? map : null,
+        icon: { url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`, scaledSize: new google.maps.Size(w, 52), anchor: new google.maps.Point(w/2, 26) },
+        zIndex: 1000,
       });
+      marker.addListener('click', () => { map.setZoom(14); map.panTo({ lat, lng }); });
+      return marker;
+    });
+    districtMarkersRef.current = dMarkers;
 
-      districtMarkersRef.current = Object.entries(districtMap).map(([name, { count, lat, lng }]) => {
-        const w = name.length * 14 + 40;
-        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="52">
-          <circle cx="${w/2}" cy="26" r="24" fill="#FFB830" fill-opacity="0.92" stroke="white" stroke-width="2"/>
-          <text x="${w/2}" y="21" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="white">${name}</text>
-          <text x="${w/2}" y="36" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="white">${count}間</text>
-        </svg>`;
-        const marker = new google.maps.Marker({
-          position: { lat, lng }, map,
-          icon: {
-            url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
-            scaledSize: new google.maps.Size(w, 52),
-            anchor: new google.maps.Point(w / 2, 26),
-          },
-          zIndex: 1000,
-        });
-        marker.addListener('click', () => { map.setZoom(15); map.panTo({ lat, lng }); });
-        return marker;
-      });
-      return;
-    }
-
-    // ── 層二：zoom 14-16，MarkerClusterer 聚合 ──
-    if (zoom < 17) {
-      const markers = properties.map(property => {
-        const label = `$${(property.price / 10000).toFixed(1)}萬`;
-        const marker = new google.maps.Marker({
-          position: { lat: property.location.lat, lng: property.location.lng },
-          title: property.title,
-          icon: {
-            url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
-              `<svg xmlns="http://www.w3.org/2000/svg" width="68" height="30">
-                <rect x="1" y="1" width="66" height="22" rx="11" fill="white" stroke="#E8650A" stroke-width="2"/>
-                <text x="34" y="16" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="#1a1a1a">${label}</text>
-                <polygon points="29,23 39,23 34,30" fill="#E8650A"/>
-              </svg>`
-            )}`,
-            scaledSize: new google.maps.Size(68, 30),
-            anchor: new google.maps.Point(34, 30),
-          },
-        });
-        marker.addListener('click', () => { setSelectedProperty(property); onPropertyClick?.(property); });
-        individualMarkersRef.current.push(marker);
-        return marker;
-      });
-
-      clustererRef.current = new MarkerClusterer({
-        map, markers,
-        algorithm: new GridAlgorithm({ gridSize: 60, maxZoom: 16 }),
-        renderer: {
-          render: ({ count, position }) => {
-            const size = count > 100 ? 56 : count > 20 ? 48 : count > 5 ? 40 : 34;
-            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
-              <circle cx="${size/2}" cy="${size/2}" r="${size/2-2}" fill="#FFB830" fill-opacity="0.9" stroke="white" stroke-width="2"/>
-              <text x="${size/2}" y="${size/2+4}" text-anchor="middle" font-size="12" font-weight="700" font-family="sans-serif" fill="white">${count}</text>
-            </svg>`;
-            return new google.maps.Marker({
-              position,
-              icon: {
-                url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
-                scaledSize: new google.maps.Size(size, size),
-                anchor: new google.maps.Point(size/2, size/2),
-              },
-              zIndex: 1000,
-            });
-          },
-        },
-      });
-      return;
-    }
-
-    // ── 層三：zoom >= 17，個別物件標記 ──
-    properties.forEach(property => {
+    // ── 個別物件 markers（給 clusterer 用）──
+    const iMarkers = properties.map(property => {
       const label = `$${(property.price / 10000).toFixed(1)}萬`;
       const marker = new google.maps.Marker({
         position: { lat: property.location.lat, lng: property.location.lng },
-        map, title: property.title,
+        title: property.title,
         icon: {
           url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
             `<svg xmlns="http://www.w3.org/2000/svg" width="68" height="30">
@@ -201,32 +149,56 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
         },
       });
       marker.addListener('click', () => { setSelectedProperty(property); onPropertyClick?.(property); });
-      individualMarkersRef.current.push(marker);
+      return marker;
+    });
+    individualMarkersRef.current = iMarkers;
+
+    // ── MarkerClusterer（縮小時自動聚合）──
+    const clusterer = new MarkerClusterer({
+      map: isDistrictLayerRef.current ? null as any : map,
+      markers: iMarkers,
+      algorithm: new GridAlgorithm({ gridSize: 60 }),
+      renderer: {
+        render: ({ count, position }) => {
+          const size = count > 100 ? 56 : count > 20 ? 48 : count > 5 ? 40 : 34;
+          const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
+            <circle cx="${size/2}" cy="${size/2}" r="${size/2-2}" fill="#FFB830" fill-opacity="0.9" stroke="white" stroke-width="2"/>
+            <text x="${size/2}" y="${size/2+4}" text-anchor="middle" font-size="12" font-weight="700" font-family="sans-serif" fill="white">${count}</text>
+          </svg>`;
+          return new google.maps.Marker({
+            position,
+            icon: { url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`, scaledSize: new google.maps.Size(size, size), anchor: new google.maps.Point(size/2, size/2) },
+            zIndex: 999,
+          });
+        },
+      },
+    });
+    clustererRef.current = clusterer;
+
+    // ── zoom 切層（用 setMap，不重建）──
+    const zListener = map.addListener('zoom_changed', () => {
+      const z = map.getZoom() ?? 7;
+      const wantDistrict = z < 14;
+      if (wantDistrict === isDistrictLayerRef.current) return;
+      isDistrictLayerRef.current = wantDistrict;
+      if (wantDistrict) {
+        dMarkers.forEach(m => m.setMap(map));
+        iMarkers.forEach(m => m.setMap(null));
+        clusterer.setMap(null as any);
+      } else {
+        dMarkers.forEach(m => m.setMap(null));
+        iMarkers.forEach(m => m.setMap(map));
+        clusterer.setMap(map);
+      }
     });
 
-    return clearAll;
-  }, [map, enableClustering, properties, zoom]);
-
-  // Auto-fit: single property → zoom 15 on it; multiple → fitBounds all markers
-  useEffect(() => {
-    if (!map || properties.length === 0) return;
-
-    if (properties.length === 1) {
-      const { lat, lng } = properties[0].location;
-      map.panTo({ lat, lng });
-      map.setZoom(15);
-    } else {
-      // filter out default Taipei coords that haven't been geocoded yet
-      const geocoded = properties.filter(
-        p => !(Math.abs(p.location.lat - 25.033) < 0.001 && Math.abs(p.location.lng - 121.5654) < 0.001)
-      );
-      const list = geocoded.length > 0 ? geocoded : properties;
-
-      const bounds = new google.maps.LatLngBounds();
-      list.forEach(p => bounds.extend({ lat: p.location.lat, lng: p.location.lng }));
-      map.fitBounds(bounds, 80);
-    }
-  }, [map, properties]);
+    return () => {
+      google.maps.event.removeListener(zListener);
+      clusterer.clearMarkers();
+      dMarkers.forEach(m => m.setMap(null));
+      iMarkers.forEach(m => m.setMap(null));
+    };
+  }, [map, enableClustering, properties]);
 
   const handleLocateMe = () => {
     if (!map) return;
@@ -243,13 +215,14 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
   return (
     <>
       <Map
-        defaultCenter={{ lat: 23.9, lng: 121.0 }} // 台灣中心，fitBounds 後會覆蓋
+        defaultCenter={{ lat: 23.9, lng: 121.0 }}
         defaultZoom={7}
         mapId="DEMO_MAP_ID"
         gestureHandling="greedy"
         streetViewControl={false}
         mapTypeControlOptions={{ style: 0, position: 6 }}
       >
+        {/* 非聚合模式（詳細頁）用 React 渲染單一 marker */}
         {!enableClustering && properties.map(property => (
           <PropertyMarker
             key={property.id}
@@ -265,39 +238,21 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
             onCloseClick={() => setSelectedProperty(null)}
           >
             <div className="p-2 max-w-[200px]">
-              <img
-                src={selectedProperty.images[0]}
-                alt={selectedProperty.title}
-                className="w-full h-24 object-cover rounded-lg mb-2"
-                referrerPolicy="no-referrer"
-              />
+              <img src={selectedProperty.images[0]} alt={selectedProperty.title} className="w-full h-24 object-cover rounded-lg mb-2" referrerPolicy="no-referrer" />
               <h3 className="font-bold text-sm mb-1 truncate">{selectedProperty.title}</h3>
-              <p className="text-orange-600 font-bold text-sm">
-                NT${selectedProperty.price.toLocaleString()} / 月
-              </p>
-              <button
-                onClick={() => window.location.href = `/property/${selectedProperty.id}`}
-                className="mt-2 w-full py-1.5 bg-gray-900 text-white text-xs rounded-md font-bold"
-              >
-                查看詳情
-              </button>
+              <p className="text-orange-600 font-bold text-sm">NT${selectedProperty.price.toLocaleString()} / 月</p>
+              <button onClick={() => window.location.href = `/property/${selectedProperty.id}`} className="mt-2 w-full py-1.5 bg-gray-900 text-white text-xs rounded-md font-bold">查看詳情</button>
             </div>
           </InfoWindow>
         )}
       </Map>
 
-      {/* Search Bar：僅在 showSearch=true 時顯示 */}
       {showSearch && (
         <div className="absolute top-6 left-6 right-6 md:right-auto md:w-96 z-10">
-          <GeoSearch onSearch={(lat, lng) => {
-            if (!map) return;
-            map.panTo({ lat, lng });
-            map.setZoom(15);
-          }} />
+          <GeoSearch onSearch={(lat, lng) => { if (!map) return; map.panTo({ lat, lng }); map.setZoom(15); }} />
         </div>
       )}
 
-      {/* Locate Me */}
       <button
         onClick={handleLocateMe}
         className="absolute bottom-24 right-4 w-9 h-9 bg-white rounded-xl shadow-lg flex items-center justify-center text-gray-700 hover:text-orange-600 transition-colors z-10 border border-gray-100"
@@ -318,9 +273,7 @@ function GeoSearch({ onSearch }: { onSearch: (lat: number, lng: number) => void 
     setSearching(true);
     try {
       const addr = encodeURIComponent(value);
-      const geo = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?address=${addr}&key=${API_KEY}&language=zh-TW`
-      );
+      const geo = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${addr}&key=${API_KEY}&language=zh-TW`);
       const json = await geo.json();
       const loc = json.results?.[0]?.geometry?.location;
       if (loc) onSearch(loc.lat, loc.lng);
@@ -334,24 +287,14 @@ function GeoSearch({ onSearch }: { onSearch: (lat: number, lng: number) => void 
         <Search className="w-5 h-5 text-gray-400 group-focus-within:text-orange-600 transition-colors" />
       </div>
       <input
-        type="text"
-        value={value}
-        onChange={e => setValue(e.target.value)}
+        type="text" value={value} onChange={e => setValue(e.target.value)}
         onKeyDown={e => e.key === 'Enter' && doSearch()}
         placeholder="搜尋地點、捷運站或地址... (Enter 搜尋)"
         className="w-full pl-12 pr-20 py-4 bg-white rounded-2xl shadow-2xl border border-gray-100 focus:outline-none focus:ring-2 focus:ring-orange-600/20 focus:border-orange-600 text-gray-900 font-medium placeholder:text-gray-400 transition-all"
       />
       <div className="absolute inset-y-0 right-3 flex items-center gap-1">
-        {value && (
-          <button onClick={() => setValue('')} className="text-gray-400 hover:text-gray-600 p-1">
-            <X className="w-4 h-4" />
-          </button>
-        )}
-        <button
-          onClick={doSearch}
-          disabled={searching}
-          className="px-3 py-1.5 bg-orange-600 text-white rounded-xl text-xs font-bold hover:bg-orange-700 transition-colors disabled:opacity-50"
-        >
+        {value && <button onClick={() => setValue('')} className="text-gray-400 hover:text-gray-600 p-1"><X className="w-4 h-4" /></button>}
+        <button onClick={doSearch} disabled={searching} className="px-3 py-1.5 bg-orange-600 text-white rounded-xl text-xs font-bold hover:bg-orange-700 transition-colors disabled:opacity-50">
           {searching ? '...' : '搜尋'}
         </button>
       </div>
@@ -366,25 +309,18 @@ function PropertyMarker({ property, onClick, isSingle }: { property: Property; o
   useEffect(() => {
     if (!map) return;
     const label = `$${(property.price / 10000).toFixed(1)}萬`;
-    const icon = isSingle
-      ? undefined // 單一物件用 Google 預設紅色 pin
-      : {
-          url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
-            `<svg xmlns="http://www.w3.org/2000/svg" width="68" height="30">
-              <rect x="1" y="1" width="66" height="22" rx="11" fill="white" stroke="#E8650A" stroke-width="2"/>
-              <text x="34" y="16" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="#1a1a1a">${label}</text>
-              <polygon points="29,23 39,23 34,30" fill="#E8650A"/>
-            </svg>`
-          )}`,
-          scaledSize: new google.maps.Size(68, 30),
-          anchor: new google.maps.Point(34, 30),
-        };
-    const marker = new google.maps.Marker({
-      position: { lat: property.location.lat, lng: property.location.lng },
-      map,
-      title: property.title,
-      icon,
-    });
+    const icon = isSingle ? undefined : {
+      url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="68" height="30">
+          <rect x="1" y="1" width="66" height="22" rx="11" fill="white" stroke="#E8650A" stroke-width="2"/>
+          <text x="34" y="16" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="#1a1a1a">${label}</text>
+          <polygon points="29,23 39,23 34,30" fill="#E8650A"/>
+        </svg>`
+      )}`,
+      scaledSize: new google.maps.Size(68, 30),
+      anchor: new google.maps.Point(34, 30),
+    };
+    const marker = new google.maps.Marker({ position: { lat: property.location.lat, lng: property.location.lng }, map, title: property.title, icon });
     marker.addListener('click', onClick);
     markerRef.current = marker;
     return () => { marker.setMap(null); };
