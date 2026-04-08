@@ -38,16 +38,7 @@ export default function MapComponent({ properties, onPropertyClick, showSearch =
 
 function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false }: MapComponentProps) {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
-  const [isSatellite, setIsSatellite] = useState(false);
   const map = useMap();
-
-  // 切換衛星/地圖模式
-  const toggleMapType = () => {
-    if (!map) return;
-    const next = isSatellite ? 'roadmap' : 'satellite';
-    (map as any).setMapTypeId(next);
-    setIsSatellite(!isSatellite);
-  };
 
   // Auto-fit: single property → zoom 15 on it; multiple → fitBounds all markers
   useEffect(() => {
@@ -90,7 +81,6 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
         mapId="DEMO_MAP_ID"
         gestureHandling="greedy"
         streetViewControl={false}
-        mapTypeControl={false}
       >
         {properties.map(property => (
           <PropertyMarker
@@ -136,26 +126,6 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
             map.setZoom(15);
           }} />
         </div>
-      )}
-
-      {/* 衛星/地圖切換（縮圖樣式）左下角 */}
-      {showMapTypeControl && (
-        <button
-          onClick={toggleMapType}
-          className="absolute bottom-6 left-6 w-16 h-16 rounded-xl overflow-hidden shadow-lg border-2 border-white z-10"
-          title={isSatellite ? '切換為地圖' : '切換為衛星'}
-        >
-          <img
-            src={isSatellite
-              ? 'https://maps.gstatic.com/tactile/basemap/default-2x.jpg'
-              : 'https://maps.gstatic.com/tactile/basemap/satellite-2x.jpg'}
-            alt={isSatellite ? '地圖' : '衛星'}
-            className="w-full h-full object-cover"
-          />
-          <span className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[9px] text-center py-0.5 font-bold">
-            {isSatellite ? '地圖' : '衛星'}
-          </span>
-        </button>
       )}
 
       {/* Locate Me */}
