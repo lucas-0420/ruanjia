@@ -132,10 +132,10 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
       {/* Locate Me */}
       <button
         onClick={handleLocateMe}
-        className="absolute bottom-6 right-6 w-12 h-12 bg-white rounded-2xl shadow-xl flex items-center justify-center text-gray-700 hover:text-orange-600 transition-colors z-10 border border-gray-100"
+        className="absolute bottom-24 right-4 w-9 h-9 bg-white rounded-xl shadow-lg flex items-center justify-center text-gray-700 hover:text-orange-600 transition-colors z-10 border border-gray-100"
         title="定位我的位置"
       >
-        <Navigation className="w-6 h-6" />
+        <Navigation className="w-4 h-4" />
       </button>
     </>
   );
