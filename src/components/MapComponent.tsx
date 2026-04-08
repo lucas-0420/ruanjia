@@ -79,13 +79,11 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
         defaultCenter={{ lat: 23.9, lng: 121.0 }} // 台灣中心，fitBounds 後會覆蓋
         defaultZoom={7}
         gestureHandling="greedy"
-        disableDefaultUI={true}
-        zoomControl={true}
         renderingType="RASTER"
-        mapTypeControl={showMapTypeControl}
-        mapTypeControlOptions={showMapTypeControl ? { style: 0, position: 6 } : undefined}
-        fullscreenControl={false}
         streetViewControl={false}
+        fullscreenControl={false}
+        mapTypeControl={true}
+        mapTypeControlOptions={{ style: 4 }}
       >
         {properties.map(property => (
           <PropertyMarker
