@@ -59,10 +59,12 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
   const individualMarkersRef = useRef<google.maps.Marker[]>([]);
   const districtMarkersRef = useRef<google.maps.Marker[]>([]);
   const isDistrictLayerRef = useRef<boolean>(true);
+  const hasAutoFittedRef = useRef<boolean>(false);
 
-  // Auto-fit
+  // Auto-fit：只在第一次載入時執行一次
   useEffect(() => {
-    if (!map || properties.length === 0) return;
+    if (!map || properties.length === 0 || hasAutoFittedRef.current) return;
+    hasAutoFittedRef.current = true;
     if (properties.length === 1) {
       map.panTo({ lat: properties[0].location.lat, lng: properties[0].location.lng });
       map.setZoom(15);
