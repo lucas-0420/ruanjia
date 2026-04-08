@@ -81,7 +81,6 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
         gestureHandling="greedy"
         disableDefaultUI={true}
         zoomControl={true}
-        fullscreenControl={true}
         renderingType="RASTER"
         mapTypeControl={showMapTypeControl}
         fullscreenControl={false}
