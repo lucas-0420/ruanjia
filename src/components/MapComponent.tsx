@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { APIProvider, Map, AdvancedMarker, InfoWindow, useAdvancedMarkerRef, useMap } from '@vis.gl/react-google-maps';
+import { APIProvider, Map, InfoWindow, useMap } from '@vis.gl/react-google-maps';
 import { Property } from '../types';
 import { Home, Navigation, Search, X } from 'lucide-react';
 
@@ -77,7 +77,6 @@ function MapInner({ properties, onPropertyClick, showSearch = true }: MapCompone
       <Map
         defaultCenter={{ lat: 23.9, lng: 121.0 }} // 台灣中心，fitBounds 後會覆蓋
         defaultZoom={7}
-        mapId="DEMO_MAP_ID"
         gestureHandling="greedy"
         disableDefaultUI={true}
         zoomControl={true}
@@ -192,23 +191,32 @@ function GeoSearch({ onSearch }: { onSearch: (lat: number, lng: number) => void 
 }
 
 function PropertyMarker({ property, onClick }: { property: Property; onClick: () => void; key?: string }) {
-  const [markerRef] = useAdvancedMarkerRef();
+  const map = useMap();
+  const markerRef = useRef<google.maps.Marker | null>(null);
 
-  return (
-    <AdvancedMarker
-      ref={markerRef}
-      position={{ lat: property.location.lat, lng: property.location.lng }}
-      onClick={onClick}
-      title={property.title}
-    >
-      <div className="relative group">
-        <div className="bg-white px-2 py-1 rounded-full shadow-lg border-2 border-orange-600 flex items-center gap-1 transform transition-transform group-hover:scale-110">
-          <span className="text-[10px] font-bold text-gray-900">
-            ${(property.price / 10000).toFixed(1)}萬
-          </span>
-        </div>
-        <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-orange-600 mx-auto -mt-0.5" />
-      </div>
-    </AdvancedMarker>
-  );
+  useEffect(() => {
+    if (!map) return;
+    const label = `$${(property.price / 10000).toFixed(1)}萬`;
+    const marker = new google.maps.Marker({
+      position: { lat: property.location.lat, lng: property.location.lng },
+      map,
+      title: property.title,
+      icon: {
+        url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+          `<svg xmlns="http://www.w3.org/2000/svg" width="68" height="30">
+            <rect x="1" y="1" width="66" height="22" rx="11" fill="white" stroke="#E8650A" stroke-width="2"/>
+            <text x="34" y="16" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="#1a1a1a">${label}</text>
+            <polygon points="29,23 39,23 34,30" fill="#E8650A"/>
+          </svg>`
+        )}`,
+        scaledSize: new google.maps.Size(68, 30),
+        anchor: new google.maps.Point(34, 30),
+      },
+    });
+    marker.addListener('click', onClick);
+    markerRef.current = marker;
+    return () => { marker.setMap(null); };
+  }, [map, property.location.lat, property.location.lng, property.price]);
+
+  return null;
 }
