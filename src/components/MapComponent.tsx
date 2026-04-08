@@ -83,6 +83,7 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
         zoomControl={true}
         renderingType="RASTER"
         mapTypeControl={showMapTypeControl}
+        mapTypeControlOptions={showMapTypeControl ? { style: 0, position: 6 } : undefined}
         fullscreenControl={false}
         streetViewControl={false}
       >
