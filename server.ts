@@ -59,6 +59,9 @@ async function notifyAdmin(message: string, key = 'general') {
 const app = express();
 const PORT = 3000;
 
+// Railway 使用反向代理，需設定 trust proxy 讓 rate-limit 正確識別 IP
+app.set('trust proxy', 1);
+
 // ── CORS：允許 Vercel 前端跨域呼叫 ──
 const allowedOrigins = [
   'http://localhost:3000',
