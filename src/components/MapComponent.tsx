@@ -82,6 +82,7 @@ function MapInner({ properties, onPropertyClick, showSearch = true }: MapCompone
         zoomControl={true}
         fullscreenControl={true}
         renderingType="RASTER"
+        mapTypeControl={false}
       >
         {properties.map(property => (
           <PropertyMarker
