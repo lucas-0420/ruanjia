@@ -84,7 +84,8 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
         fullscreenControl={true}
         renderingType="RASTER"
         mapTypeControl={showMapTypeControl}
-        mapTypeControlOptions={{ style: 2, position: 3 }}
+        fullscreenControl={false}
+        streetViewControl={false}
       >
         {properties.map(property => (
           <PropertyMarker
