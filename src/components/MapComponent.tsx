@@ -81,6 +81,7 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
         mapId="DEMO_MAP_ID"
         gestureHandling="greedy"
         streetViewControl={false}
+        mapTypeControlOptions={{ style: 0, position: 6 }}
       >
         {properties.map(property => (
           <PropertyMarker
