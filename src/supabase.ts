@@ -4,7 +4,7 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Supabase 環境變數未設定，請確認 .env 檔案');
+  console.error('[暖家] 缺少 Supabase 環境變數：VITE_SUPABASE_URL 或 VITE_SUPABASE_ANON_KEY 未設定，請確認 .env 檔案');
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);

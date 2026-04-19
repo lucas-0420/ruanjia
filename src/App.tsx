@@ -13,11 +13,44 @@ import PostProperty from './pages/PostProperty';
 import Profile from './pages/Profile';
 import Messages from './pages/Messages';
 import ConfigStatusBanner from './components/ConfigStatusBanner';
-import { AnimatePresence } from 'motion/react';
+import { ToastContainer } from './components/Toast';
+import { motion, AnimatePresence } from 'motion/react';
 import { SupabaseProvider } from './context/SupabaseContext';
-import { useState, useEffect } from 'react';
-import { ChevronUp, Home as HomeIcon } from 'lucide-react';
-import { motion, AnimatePresence as MotionAnimatePresence } from 'motion/react';
+import { useState, useEffect, Component, ReactNode } from 'react';
+import { ChevronUp, Home as HomeIcon, AlertTriangle, RefreshCw } from 'lucide-react';
+
+// ── Error Boundary：捕捉子元件崩潰，顯示友善錯誤頁 ──
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="min-h-screen bg-[#FBF7F3] flex items-center justify-center p-8">
+          <div className="max-w-md text-center">
+            <AlertTriangle className="w-12 h-12 text-[#F5A623] mx-auto mb-4" />
+            <h1 className="text-xl font-bold text-[#3D2B1F] mb-2">頁面發生錯誤</h1>
+            <p className="text-sm text-[#9A7D6B] mb-6">
+              {(this.state.error as Error).message || '發生未知錯誤'}
+            </p>
+            <button
+              onClick={() => { this.setState({ error: null }); window.location.reload(); }}
+              className="flex items-center gap-2 mx-auto px-5 py-2.5 bg-[#F5A623] text-[#3D2B1F] font-bold rounded-xl hover:bg-[#e8961a] transition-colors"
+            >
+              <RefreshCw className="w-4 h-4" />
+              重新整理
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function App() {
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -31,12 +64,14 @@ export default function App() {
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
 
   return (
+    <ErrorBoundary>
     <SupabaseProvider>
       <Router>
         <ScrollToTop />
         <div className="min-h-screen bg-[#FBF7F3] font-sans selection:bg-[#FFE8CC] selection:text-[#3D2B1F]">
           <Navbar />
           <ConfigStatusBanner />
+          <ToastContainer />
 
           {/* 主要內容：手機版底部留白以避免被底部導覽列遮住 */}
           <div className="pb-20 md:pb-0">
@@ -58,8 +93,8 @@ export default function App() {
             </AnimatePresence>
           </div>
 
-          {/* Footer */}
-          <footer className="bg-[#FFF8F0] border-t border-[#E5D5C5] py-16 md:py-20 mb-16 md:mb-0">
+          {/* Footer：手機底部加 pb 避免被 tab bar 遮住 */}
+          <footer className="bg-[#FFF8F0] border-t border-[#E5D5C5] py-16 md:py-20 mb-16 md:mb-0 pb-24 md:pb-16">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-12 mb-12">
 
@@ -119,7 +154,7 @@ export default function App() {
           </footer>
 
           {/* 回到頂部按鈕 — 手機版在底部導覽列上方 */}
-          <MotionAnimatePresence>
+          <AnimatePresence>
             {showScrollTop && (
               <motion.button
                 initial={{ opacity: 0, y: 20 }}
@@ -131,9 +166,10 @@ export default function App() {
                 <ChevronUp className="w-5 h-5" />
               </motion.button>
             )}
-          </MotionAnimatePresence>
+          </AnimatePresence>
         </div>
       </Router>
     </SupabaseProvider>
+    </ErrorBoundary>
   );
 }

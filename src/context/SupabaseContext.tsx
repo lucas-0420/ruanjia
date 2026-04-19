@@ -136,18 +136,22 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
   const toggleFavorite = async (propertyId: string) => {
     if (!user) { alert('請先登入以收藏房源'); return; }
 
+    const prevFavorites = favorites; // 保留原始狀態以便還原
     const newFavorites = favorites.includes(propertyId)
       ? favorites.filter(id => id !== propertyId)
       : [...favorites, propertyId];
 
-    setFavorites(newFavorites);
+    setFavorites(newFavorites); // 樂觀更新 UI
 
     const { error } = await supabase
       .from('users')
       .update({ favorites: newFavorites })
       .eq('id', user.id);
 
-    if (error) handleSupabaseError(error, 'update', 'users');
+    if (error) {
+      setFavorites(prevFavorites); // 失敗時還原
+      handleSupabaseError(error, 'update', 'users');
+    }
   };
 
   const login = async () => { try { await signInWithGoogle(); } catch (e) { console.error('Login error:', e); } };
@@ -182,7 +186,7 @@ export function mapPropertyFromDB(row: any): Property {
     isZeroFee: row.is_zero_fee,
     createdAt: row.created_at,
     tags: row.tags || [],
-    status: row.status,
+    status: row.status ?? 'active',
   };
 }
 

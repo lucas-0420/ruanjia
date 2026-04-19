@@ -85,32 +85,54 @@ export default function AdminDashboard() {
     ? byFilter.filter(p => `${p.title} ${p.location.city}${p.location.district}`.toLowerCase().includes(search.trim().toLowerCase()))
     : byFilter;
 
+  const renderRow = (prop: Property) => {
+    const isArchived = prop.status === 'archived';
+    return (
+      <div key={prop.id} className={cn('flex items-center gap-3 px-4 py-3 border-b border-[#F2E9DF] last:border-0', isArchived && 'opacity-55')}>
+        <Link to={`/property/${prop.id}`} className="w-14 h-14 rounded-2xl overflow-hidden shrink-0 bg-[#F2E9DF]">
+          <img src={prop.images[0]} alt={prop.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+        </Link>
+        <div className="flex-1 min-w-0">
+          <Link to={`/property/${prop.id}`} className="text-sm font-bold text-[#3D2B1F] truncate block hover:text-[#F5A623] transition-colors">{prop.title}</Link>
+          <p className="text-xs text-[#9A7D6B] truncate mt-0.5">{prop.location.district} · NT${prop.price.toLocaleString()}</p>
+        </div>
+        <div className="shrink-0">
+          {savingId === prop.id ? <Loader2 className="w-4 h-4 animate-spin text-[#F5A623]" /> : (
+            <select value={prop.status || 'active'} onChange={e => handleStatusChange(prop.id, prop.title, e.target.value as 'active' | 'archived')}
+              className={cn('text-[11px] font-bold px-2 py-1.5 rounded-xl border-2 appearance-none cursor-pointer focus:outline-none',
+                isArchived ? 'border-gray-200 bg-gray-50 text-gray-500' : 'border-green-200 bg-green-50 text-green-700')}>
+              <option value="active">✓ 上架中</option>
+              <option value="archived">✕ 已下架</option>
+            </select>
+          )}
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <Link to={`/admin/edit/${prop.id}`} className="w-8 h-8 rounded-xl border border-[#E5D5C5] flex items-center justify-center text-[#B8A090] hover:text-[#F5A623] hover:border-[#F5A623] transition-all">
+            <Edit className="w-3.5 h-3.5" />
+          </Link>
+          <button onClick={() => handleDelete(prop.id, prop.title)} className="w-8 h-8 rounded-xl border border-[#E5D5C5] flex items-center justify-center text-[#B8A090] hover:text-red-500 hover:border-red-300 transition-all">
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 pt-16">
+    <div className="min-h-screen bg-[#FBF7F3] pt-16">
 
       {/* Confirm Modal */}
       {confirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
           <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full">
-            <h3 className="text-lg font-black text-gray-900 mb-2">確認變更狀態</h3>
-            <p className="text-gray-500 text-sm mb-6">
-              將「<span className="font-bold text-gray-900">{confirm.title}</span>」
+            <h3 className="text-lg font-black text-[#3D2B1F] mb-2">確認變更狀態</h3>
+            <p className="text-[#9A7D6B] text-sm mb-6">
+              將「<span className="font-bold text-[#3D2B1F]">{confirm.title}</span>」
               {confirm.nextStatus === 'active' ? '重新上架' : '下架'}？
             </p>
             <div className="flex gap-3">
-              <button
-                onClick={() => setConfirm(null)}
-                className="flex-1 py-3 rounded-2xl border-2 border-gray-100 font-bold text-gray-600 hover:bg-gray-50 transition-all"
-              >
-                取消
-              </button>
-              <button
-                onClick={applyStatusChange}
-                className={cn(
-                  'flex-1 py-3 rounded-2xl font-bold text-white transition-all',
-                  confirm.nextStatus === 'active' ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-700 hover:bg-gray-800'
-                )}
-              >
+              <button onClick={() => setConfirm(null)} className="flex-1 py-3 rounded-2xl border-2 border-[#E5D5C5] font-bold text-[#7A5C48]">取消</button>
+              <button onClick={applyStatusChange} className={cn('flex-1 py-3 rounded-2xl font-bold text-white', confirm.nextStatus === 'active' ? 'bg-green-600' : 'bg-[#3D2B1F]')}>
                 {confirm.nextStatus === 'active' ? '確認上架' : '確認下架'}
               </button>
             </div>
@@ -118,7 +140,47 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      <div className="flex max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 gap-8 py-10">
+      {/* ══ 手機版 ══ */}
+      <div className="lg:hidden flex flex-col h-[calc(100vh-64px)]">
+        <div className="bg-[#FBF7F3] px-4 pt-4 pb-3 space-y-3 shrink-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-black text-[#3D2B1F]">我的房源</h1>
+              <span className="text-xs font-bold text-[#9A7D6B] bg-[#F2E9DF] px-2 py-0.5 rounded-full">{filtered.length}</span>
+            </div>
+            <Link to="/post" className="flex items-center gap-1.5 bg-[#FFB830] text-[#3D2B1F] px-3 py-2 rounded-xl text-sm font-bold">
+              <Plus className="w-4 h-4" />刊登
+            </Link>
+          </div>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#B8A090]" />
+            <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="搜尋房源..."
+              className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-[#E5D5C5] bg-white text-sm focus:outline-none focus:border-[#F5A623]" />
+            {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#B8A090]"><X className="w-4 h-4" /></button>}
+          </div>
+          <div className="flex gap-2">
+            {([['all','全部', properties.length], ['active','上架中', activeProps.length], ['archived','已下架', archivedProps.length]] as const).map(([key, label, count]) => (
+              <button key={key} onClick={() => setFilter(key)}
+                className={cn('flex-1 py-2 rounded-xl text-xs font-bold border transition-colors',
+                  filter === key ? 'bg-[#FFE8CC] text-[#F5A623] border-[#FFE8CC]' : 'bg-white text-[#9A7D6B] border-[#E5D5C5]')}>
+                {label} {count}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto bg-white">
+          {loading ? (
+            <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-[#F5A623]" /></div>
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 px-8 text-center">
+              <p className="font-bold text-[#9A7D6B]">沒有符合的房源</p>
+            </div>
+          ) : filtered.map(renderRow)}
+        </div>
+      </div>
+
+      {/* ══ 桌面版 ══ */}
+      <div className="hidden lg:flex max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 gap-8 py-10">
 
         {/* Sidebar */}
         <aside className="hidden lg:flex flex-col gap-4 w-64 shrink-0">
@@ -199,56 +261,15 @@ export default function AdminDashboard() {
 
           <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
             {loading ? (
-              <div className="flex items-center justify-center py-20">
-                <Loader2 className="w-8 h-8 animate-spin text-orange-600" />
-              </div>
+              <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-[#F5A623]" /></div>
             ) : filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center px-8">
-                <p className="font-bold text-gray-400 mb-2">尚無房源</p>
-                <Link to="/post" className="flex items-center gap-2 bg-orange-600 text-white px-6 py-3 rounded-2xl font-bold hover:bg-orange-700 transition-all mt-4">
+                <p className="font-bold text-[#9A7D6B] mb-4">尚無房源</p>
+                <Link to="/post" className="flex items-center gap-2 bg-[#FFB830] text-[#3D2B1F] px-6 py-3 rounded-2xl font-bold">
                   <Plus className="w-4 h-4" />立即刊登
                 </Link>
               </div>
-            ) : filtered.map(prop => (
-              <div key={prop.id} className={cn('flex items-center gap-4 px-6 py-4 hover:bg-gray-50/70 transition-colors border-b border-gray-50 last:border-0', prop.status === 'archived' && 'opacity-60')}>
-                <Link to={`/property/${prop.id}`} className="w-20 h-14 rounded-xl overflow-hidden shrink-0 bg-gray-100 hover:opacity-80 transition-opacity">
-                  <img src={prop.images[0]} alt={prop.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                </Link>
-                <div className="flex-1 min-w-0">
-                  <Link to={`/property/${prop.id}`} className="font-bold text-gray-900 truncate block hover:text-orange-600 transition-colors">{prop.title}</Link>
-                  <p className="text-sm text-gray-500 truncate mt-0.5">{prop.location.city}{prop.location.district} · NT${prop.price.toLocaleString()} / 月</p>
-                </div>
-                <div className="shrink-0">
-                  {savingId === prop.id ? (
-                    <div className="w-28 h-9 flex items-center justify-center">
-                      <Loader2 className="w-4 h-4 animate-spin text-orange-600" />
-                    </div>
-                  ) : (
-                    <select
-                      value={prop.status || 'active'}
-                      onChange={e => handleStatusChange(prop.id, prop.title, e.target.value as 'active' | 'archived')}
-                      className={cn(
-                        'text-xs font-bold px-3 py-2 rounded-xl border-2 appearance-none cursor-pointer focus:outline-none transition-all',
-                        prop.status === 'archived'
-                          ? 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-400'
-                          : 'border-green-200 bg-green-50 text-green-700 hover:border-green-400'
-                      )}
-                    >
-                      <option value="active">✓ 上架中</option>
-                      <option value="archived">✕ 已下架</option>
-                    </select>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <Link to={`/admin/edit/${prop.id}`} className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-400 transition-all">
-                    <Edit className="w-4 h-4" />
-                  </Link>
-                  <button onClick={() => handleDelete(prop.id, prop.title)} className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400 hover:text-red-600 hover:border-red-400 transition-all">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
+            ) : filtered.map(renderRow)}
           </div>
         </div>
       </div>

@@ -1,11 +1,12 @@
 import React from 'react';
+import { GOOGLE_MAPS_API_KEY } from '../env';
 import FilterBar, { DEFAULT_FILTERS, Filters } from '../components/FilterBar';
 import PropertyGrid from '../components/PropertyGrid';
 import MapComponent from '../components/MapComponent';
-import { Map as MapIcon, LayoutGrid } from 'lucide-react';
+import { Map as MapIcon, LayoutGrid, List, MapPin, Search, X, BedDouble, Bath, Maximize2, Layers } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useFirebase } from '../context/SupabaseContext';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 
 function priceInRange(price: number, ranges: string[], customMin: string, customMax: string): boolean {
   // Custom range check
@@ -57,16 +58,83 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/** 列表卡片的圖片滑動元件 */
+function ListImageSlider({ images, title }: { images: string[]; title: string }) {
+  const [cur, setCur] = React.useState(0);
+  const ref = React.useRef<HTMLDivElement>(null);
+  return (
+    <div className="relative h-full" onClick={e => e.stopPropagation()}>
+      <div
+        ref={ref}
+        onScroll={() => {
+          if (!ref.current) return;
+          setCur(Math.round(ref.current.scrollLeft / ref.current.offsetWidth));
+        }}
+        className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar h-full"
+      >
+        {images.map((img, i) => (
+          <div key={i} className="snap-start shrink-0 w-full h-full">
+            <img src={img} alt={`${title} ${i + 1}`}
+              className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+              draggable={false}
+              onError={e => { (e.currentTarget as HTMLImageElement).src = '/placeholder.svg'; }}
+            />
+          </div>
+        ))}
+      </div>
+      {images.length > 1 && (() => {
+        const total = images.length;
+        let start = cur - 2, end = cur + 2;
+        if (start < 0) { end -= start; start = 0; }
+        if (end >= total) { start -= (end - total + 1); end = total - 1; }
+        start = Math.max(0, start);
+        const dots = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+        return (
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 pointer-events-none">
+            {dots.map(idx => {
+              const dist = Math.abs(idx - cur);
+              const cls = dist === 0 ? 'w-2.5 h-2.5 bg-white shadow-sm' : dist === 1 ? 'w-1.5 h-1.5 bg-white/60' : 'w-1 h-1 bg-white/30';
+              return <div key={idx} className={`rounded-full transition-all duration-300 ${cls}`} />;
+            })}
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
 export default function Listings() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const initialQ = searchParams.get('q') || '';
   const initialFilters: Partial<Filters> = {
     city: searchParams.get('city') || '台中市',
   };
-  const [viewMode, setViewMode] = React.useState<'grid' | 'map'>('grid');
+  const [, setSearchParamsState] = useSearchParams();
+  const initialView = (searchParams.get('view') as 'grid' | 'list' | 'map') || 'list';
+  const [viewMode, setViewModeState] = React.useState<'grid' | 'list' | 'map'>(initialView);
+  const setViewMode = (mode: 'grid' | 'list' | 'map') => {
+    setViewModeState(mode);
+    setSearchParamsState(prev => { const p = new URLSearchParams(prev); p.set('view', mode); return p; }, { replace: true });
+  };
   const [searchQuery, setSearchQuery] = React.useState(initialQ);
   const [filters, setFilters] = React.useState<Filters>({ ...DEFAULT_FILTERS, ...initialFilters });
   const [mapBounds, setMapBounds] = React.useState<{ north: number; south: number; east: number; west: number } | null>(null);
+  const [mapSearchQuery, setMapSearchQuery] = React.useState('');
+  const [mapCenter, setMapCenter] = React.useState<{ lat: number; lng: number } | null>(null);
+
+  const handleMapSearch = React.useCallback(async (q: string) => {
+    if (!q.trim()) return;
+    const apiKey = GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return;
+    try {
+      const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(q.trim() + ' 台灣')}&key=${apiKey}`);
+      const json = await res.json();
+      const loc = json.results?.[0]?.geometry?.location;
+      if (loc) setMapCenter({ lat: loc.lat, lng: loc.lng });
+    } catch (_) {}
+  }, []);
   const handleBoundsChange = React.useCallback((b: { north: number; south: number; east: number; west: number }) => {
     setMapBounds(b);
   }, []);
@@ -77,7 +145,7 @@ export default function Listings() {
   React.useEffect(() => {
     const addr = filters.distanceAddress.trim();
     if (!addr) { setDistanceCenter(null); return; }
-    const apiKey = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY;
+    const apiKey = GOOGLE_MAPS_API_KEY;
     if (!apiKey) return;
     const timer = setTimeout(async () => {
       try {
@@ -149,7 +217,14 @@ export default function Listings() {
 
   return (
     <div className="min-h-screen bg-white pt-16">
-      <FilterBar onSearch={setSearchQuery} onFilterChange={setFilters} initialSearch={initialQ} initialFilters={{ ...DEFAULT_FILTERS, ...initialFilters }} />
+      <FilterBar
+        onSearch={setSearchQuery}
+        onFilterChange={setFilters}
+        initialSearch={initialQ}
+        initialFilters={{ ...DEFAULT_FILTERS, ...initialFilters }}
+        isMapMode={viewMode === 'map'}
+        onMapSearch={handleMapSearch}
+      />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
         {/* Header */}
@@ -164,43 +239,215 @@ export default function Listings() {
           </div>
 
           {/* View Toggle */}
-          <div className="flex items-center gap-1.5 p-1 sm:p-1.5 bg-gray-100 rounded-xl sm:rounded-2xl shrink-0">
+          <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-xl shrink-0">
             <button
               onClick={() => setViewMode('grid')}
               className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all",
+                "flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all",
                 viewMode === 'grid' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
               )}
             >
-              <LayoutGrid className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              列表
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">格狀</span>
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={cn(
+                "flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all",
+                viewMode === 'list' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+              )}
+            >
+              <List className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">列表</span>
             </button>
             <button
               onClick={() => setViewMode('map')}
               className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all",
+                "flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all",
                 viewMode === 'map' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
               )}
             >
-              <MapIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              地圖
+              <MapIcon className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">地圖</span>
             </button>
           </div>
         </div>
 
         {viewMode === 'grid' ? (
           <PropertyGrid properties={filteredProperties} distanceMap={distanceMap} />
+        ) : viewMode === 'list' ? (
+          <div className="sm:flex sm:gap-5">
+            {/* 左側列表 */}
+            <div className="flex flex-col gap-3 sm:flex-1 sm:min-w-0">
+            {filteredProperties.map(p => {
+              const roadName = p.location.address.match(/[\u4e00-\u9fff]+[路街道巷弄]/)?.[0] || '';
+              const dist = distanceMap?.get(p.id);
+              const typeLabel = p.type === 'apartment' ? '公寓' : p.type === 'house' ? '住宅' : p.type === 'studio' ? '套房' : '雅房';
+              return (
+                <div key={p.id}
+                  className="group flex flex-row h-[150px] sm:h-auto bg-white rounded-2xl border border-[#E5D5C5] overflow-hidden hover:shadow-xl hover:shadow-[#F5A623]/10 hover:border-[#F5A623]/30 transition-all duration-300 cursor-pointer"
+                >
+                  {/* 圖片區 */}
+                  <div className="relative shrink-0 w-[110px] sm:w-52 md:w-60 overflow-hidden">
+                    {/* 手機：左右滑動＋點點指示器 */}
+                    <div className="sm:hidden h-full">
+                      <ListImageSlider images={p.images} title={p.title} />
+                    </div>
+                    {/* 電腦：單張靜態圖 */}
+                    <img src={p.images[0]} alt={p.title}
+                      className="hidden sm:block w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      referrerPolicy="no-referrer"
+                    />
+                    {/* badges */}
+                    <div className="absolute top-2 left-2 flex flex-col gap-1 pointer-events-none">
+                      {p.isZeroFee && (
+                        <span className="text-[9px] sm:text-[10px] font-bold bg-[#F5A623] text-[#3D2B1F] px-2 py-0.5 rounded-full shadow-sm">屋主直租</span>
+                      )}
+                      {p.status === 'archived' && (
+                        <span className="text-[9px] sm:text-[10px] font-bold bg-[#3D2B1F]/80 text-white px-2 py-0.5 rounded-full">已下架</span>
+                      )}
+                      <span className="text-[9px] sm:text-[10px] font-bold bg-white/85 backdrop-blur-sm text-[#3D2B1F] px-2 py-0.5 rounded-full">{typeLabel}</span>
+                    </div>
+                  </div>
+
+                  {/* 資訊區：點擊導航 */}
+                  <div className="flex-1 min-w-0 px-3 py-3 sm:px-5 sm:py-4 flex flex-col justify-between gap-2"
+                    onClick={() => navigate(`/property/${p.id}`)}
+                  >
+
+                    {/* 第一行：標題（左）+ 價格（右） */}
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="text-sm sm:text-base font-bold text-[#3D2B1F] line-clamp-1 group-hover:text-[#F5A623] transition-colors flex-1 min-w-0">
+                        {p.title}
+                      </h3>
+                      <div className="text-right shrink-0">
+                        <p className="text-base sm:text-xl font-black text-[#F5A623] leading-none whitespace-nowrap">
+                          NT$ {p.price.toLocaleString()}
+                        </p>
+                        <p className="text-[9px] text-[#B8A090] mt-0.5">/月</p>
+                      </div>
+                    </div>
+
+                    {/* 地址 */}
+                    <div className="flex items-center gap-1 text-[#9A7D6B] text-[10px] sm:text-xs">
+                      <MapPin className="w-3 h-3 text-[#F5A623] shrink-0" />
+                      <span className="line-clamp-1">{p.location.city} {p.location.district}{roadName ? ` · ${roadName}` : ''}</span>
+                      {dist !== undefined && (
+                        <span className="shrink-0 text-[#8B5E3C] bg-[#FFE8CC] px-1.5 py-0.5 rounded-full font-bold text-[9px]">
+                          {dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* 標籤 */}
+                    {((p.tags && p.tags.length > 0) || p.amenities.length > 0) && (
+                      <div className="flex items-center gap-1 sm:gap-1.5 overflow-hidden">
+                        {(p.tags && p.tags.length > 0 ? p.tags : p.amenities).slice(0, 4).map(tag => (
+                          <span key={tag} className="text-[9px] sm:text-[10px] font-bold text-[#7A5C48] bg-[#FBF7F3] border border-[#E5D5C5] px-2 py-0.5 rounded-full whitespace-nowrap">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 規格格狀（全寬） */}
+                    <div className="grid grid-cols-4 gap-1 sm:gap-1.5">
+                      {[
+                        { icon: BedDouble, label: '格局', value: `${p.features.bedrooms} 房` },
+                        { icon: Bath,      label: '衛浴', value: `${p.features.bathrooms} 衛` },
+                        { icon: Maximize2, label: '坪數', value: `${p.features.area} 坪` },
+                        { icon: Layers,    label: '樓層', value: p.features.floor ? `${p.features.floor}F` : '—' },
+                      ].map(({ icon: Icon, label, value }) => (
+                        <div key={label} className="flex flex-col items-center bg-[#FBF7F3] rounded-lg sm:rounded-xl border border-[#F2E9DF] py-1 sm:py-2 gap-px sm:gap-0.5">
+                          <Icon className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#F5A623]" />
+                          <p className="hidden sm:block text-[9px] text-[#B8A090] font-bold leading-none">{label}</p>
+                          <p className="text-[9px] sm:text-[11px] font-bold text-[#3D2B1F] leading-none">{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            </div>
+            {/* 右側：預留圖卡區（電腦才顯示） */}
+            <div className="hidden sm:block w-[320px] shrink-0">
+              <div className="sticky top-24 rounded-2xl border border-dashed border-[#E5D5C5] bg-[#FBF7F3] h-[400px] flex items-center justify-center">
+                <p className="text-[#C4A882] text-sm font-bold">圖卡區域</p>
+              </div>
+            </div>
+          </div>
         ) : (
-          <div className="flex gap-4 h-[calc(100vh-180px)]">
-            {/* 左側：地圖範圍內的物件列表 */}
-            <div className="w-80 shrink-0 overflow-y-auto flex flex-col gap-3 pr-1">
+          /* 桌面：左右分割 / 手機：地圖全螢幕 + 底部上拉列表 */
+          <div className="relative md:flex md:flex-row md:gap-4 h-[calc(100vh-280px)] md:h-[calc(100vh-180px)]">
+
+            {/* 地圖：手機全螢幕，桌面右側 */}
+            <div className="absolute inset-0 md:relative md:flex-1 md:order-2">
+              <MapComponent
+                properties={filteredProperties}
+                showSearch={false}
+                showMapTypeControl={true}
+                enableClustering={true}
+                onBoundsChange={handleBoundsChange}
+                filterCity={filters.city !== 'all' ? filters.city : undefined}
+                filterDistricts={filters.district.length > 0 ? filters.district : undefined}
+                externalCenter={mapCenter}
+                onPropertyClick={(property) => {
+                  window.open(`/property/${property.id}`, '_blank');
+                }}
+              />
+            </div>
+
+            {/* 手機：底部上拉抽屜 */}
+            <div className="md:hidden absolute bottom-0 left-0 right-0 z-10
+                            bg-white rounded-t-3xl shadow-[0_-4px_24px_rgba(0,0,0,0.12)]
+                            max-h-[45vh] flex flex-col">
+              {/* 把手 */}
+              <div className="flex justify-center pt-2.5 pb-1 shrink-0">
+                <div className="w-8 h-1 bg-gray-200 rounded-full" />
+              </div>
+              <div className="px-4 pb-1 shrink-0">
+                <p className="text-xs font-bold text-gray-400">此範圍 {
+                  (mapBounds ? filteredProperties.filter(p =>
+                    p.location.lat <= mapBounds.north && p.location.lat >= mapBounds.south &&
+                    p.location.lng <= mapBounds.east && p.location.lng >= mapBounds.west
+                  ) : filteredProperties).length
+                } 間</p>
+              </div>
+              {/* 橫滑列表 */}
+              <div className="flex gap-3 overflow-x-auto px-4 pb-4 pt-1 no-scrollbar">
+                {(() => {
+                  const inBounds = mapBounds
+                    ? filteredProperties.filter(p =>
+                        p.location.lat <= mapBounds.north && p.location.lat >= mapBounds.south &&
+                        p.location.lng <= mapBounds.east && p.location.lng >= mapBounds.west
+                      )
+                    : filteredProperties;
+                  return inBounds.length === 0 ? (
+                    <p className="text-sm text-gray-400 py-4 w-full text-center">此範圍內無物件</p>
+                  ) : inBounds.map(p => (
+                    <a key={p.id} href={`/property/${p.id}`} target="_blank" rel="noopener noreferrer"
+                      className="flex gap-3 p-3 bg-white rounded-2xl border border-gray-100 shadow-sm shrink-0 w-72 active:scale-[0.98] transition-transform"
+                    >
+                      <img src={p.images[0]} alt={p.title} className="w-16 h-16 object-cover rounded-xl shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-gray-900 truncate">{p.title}</p>
+                        <p className="text-xs text-gray-500 truncate mt-0.5">{p.location.district} · {p.features.area}坪</p>
+                        <p className="text-sm font-bold text-[#F5A623] mt-1">{p.price.toLocaleString()} 元/月</p>
+                      </div>
+                    </a>
+                  ));
+                })()}
+              </div>
+            </div>
+
+            {/* 桌面：左側垂直列表 */}
+            <div className="hidden md:flex md:flex-col md:order-1 md:w-80 md:shrink-0 md:overflow-y-auto gap-3 pr-1">
               {(() => {
                 const inBounds = mapBounds
                   ? filteredProperties.filter(p =>
-                      p.location.lat <= mapBounds.north &&
-                      p.location.lat >= mapBounds.south &&
-                      p.location.lng <= mapBounds.east &&
-                      p.location.lng >= mapBounds.west
+                      p.location.lat <= mapBounds.north && p.location.lat >= mapBounds.south &&
+                      p.location.lng <= mapBounds.east && p.location.lng >= mapBounds.west
                     )
                   : filteredProperties;
                 return inBounds.length === 0 ? (
@@ -218,21 +465,6 @@ export default function Listings() {
                   </a>
                 ));
               })()}
-            </div>
-
-            {/* 右側：地圖 */}
-            <div className="flex-1">
-              <MapComponent
-                properties={filteredProperties}
-                showMapTypeControl={true}
-                enableClustering={true}
-                onBoundsChange={handleBoundsChange}
-                filterCity={filters.city !== 'all' ? filters.city : undefined}
-                filterDistricts={filters.district.length > 0 ? filters.district : undefined}
-                onPropertyClick={(property) => {
-                  window.open(`/property/${property.id}`, '_blank');
-                }}
-              />
             </div>
           </div>
         )}

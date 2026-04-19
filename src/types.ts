@@ -33,7 +33,7 @@ export interface Property {
   isZeroFee: boolean;
   createdAt: string;
   tags?: string[];
-  status?: 'active' | 'archived';
+  status: 'active' | 'archived';
 }
 
 export interface LineMessage {

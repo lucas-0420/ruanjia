@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Heart, Search, User, LogOut, LayoutDashboard, Users, Briefcase, MessageSquare } from 'lucide-react';
+import { Home, Heart, Search, User, LogOut, LayoutDashboard, Users, Briefcase, MessageSquare, Menu, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabase';
 import { cn } from '../lib/utils';
@@ -66,6 +66,10 @@ export default function Navbar() {
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [user]);
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  // 路由切換時自動關閉選單
+  useEffect(() => { setMenuOpen(false); }, [p]);
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
   const handleLink = (path: string) => { if (p === path) scrollToTop(); };
@@ -168,20 +172,101 @@ export default function Navbar() {
               )}
             </div>
 
-            {/* 手機頂部右側：仲介/管理員顯示刊登快捷 */}
-            <div className="md:hidden">
+            {/* 手機頂部右側：刊登 + 漢堡選單 */}
+            <div className="md:hidden flex items-center gap-2">
               {user && (userRole === 'agent' || userRole === 'admin') && (
-                <Link
-                  to="/post"
-                  className="bg-[#FFB830] text-[#3D2B1F] px-3 py-1.5 rounded-xl text-sm font-bold"
-                >
+                <Link to="/post" className="bg-[#FFB830] text-[#3D2B1F] px-3 py-1.5 rounded-xl text-sm font-bold">
                   刊登
                 </Link>
               )}
+              <button
+                onClick={() => setMenuOpen(v => !v)}
+                className="w-9 h-9 flex items-center justify-center rounded-xl text-[#7A5C48] hover:bg-[#F2E9DF] transition-colors"
+              >
+                {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              </button>
             </div>
           </div>
         </div>
       </nav>
+
+      {/* ══ 手機漢堡選單抽屜 ══ */}
+      {menuOpen && (
+        <div className="md:hidden fixed inset-0 z-40" onClick={() => setMenuOpen(false)}>
+          {/* 背景遮罩 */}
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
+          {/* 抽屜本體 */}
+          <div
+            className="absolute top-16 right-0 bottom-0 w-72 bg-[#FFF8F0] shadow-2xl flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* 使用者資訊 */}
+            {user ? (
+              <div className="flex items-center gap-3 px-5 py-5 border-b border-[#E5D5C5]">
+                <img
+                  src={user.user_metadata?.avatar_url || ''}
+                  alt=""
+                  className="w-11 h-11 rounded-full border-2 border-[#E5D5C5]"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-[#3D2B1F] truncate">{user.user_metadata?.full_name || '用戶'}</p>
+                  <p className="text-[11px] text-[#9A7D6B] truncate">{user.email}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="px-5 py-5 border-b border-[#E5D5C5]">
+                <button
+                  onClick={() => { login(); setMenuOpen(false); }}
+                  className="w-full py-2.5 bg-[#FFB830] text-[#3D2B1F] rounded-xl font-bold text-sm"
+                >
+                  登入 / 註冊
+                </button>
+              </div>
+            )}
+
+            {/* 導覽項目 */}
+            <nav className="flex-1 overflow-y-auto py-3 px-3 flex flex-col gap-1">
+              {[
+                { label: '首頁',   path: '/',          icon: Home },
+                { label: '找房',   path: '/listings',  icon: Search },
+                { label: '收藏',   path: '/favorites', icon: Heart },
+                ...(user ? [{ label: '訊息', path: '/messages', icon: MessageSquare }] : []),
+                ...(userRole === 'agent' ? [{ label: '仲介後台', path: '/agent', icon: Briefcase }] : []),
+                ...(isAdmin ? [{ label: '管理室', path: '/manage', icon: Users }] : []),
+                ...(isAdmin ? [{ label: '後台總覽', path: '/admin', icon: LayoutDashboard }] : []),
+                ...(user ? [{ label: '個人帳戶', path: '/profile', icon: User }] : []),
+              ].map(item => (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  className={cn(
+                    'flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-colors',
+                    p === item.path
+                      ? 'bg-[#FFE8CC] text-[#F5A623]'
+                      : 'text-[#7A5C48] hover:bg-[#F2E9DF]'
+                  )}
+                >
+                  <item.icon className="w-4 h-4 shrink-0" />
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+
+            {/* 登出 */}
+            {user && (
+              <div className="px-3 py-4 border-t border-[#E5D5C5]">
+                <button
+                  onClick={() => { logout(); setMenuOpen(false); }}
+                  className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-sm font-semibold text-[#B8A090] hover:bg-[#F2E9DF] hover:text-[#7A5C48] transition-colors"
+                >
+                  <LogOut className="w-4 h-4" />
+                  登出
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ══════════════════════════════
           手機底部導覽列 (md 以上隱藏、物件詳細頁不渲染)

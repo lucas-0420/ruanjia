@@ -1154,13 +1154,23 @@ process.on('unhandledRejection', (reason: any) => {
   notifyAdmin(`⚠️ 未處理的非同步錯誤\n${msg.substring(0, 300)}`, 'rejection');
 });
 
+// --- 清理 AI prompt 輸入，防止 prompt injection ---
+function sanitizeForPrompt(input: string, maxLen = 2000): string {
+  return input
+    .substring(0, maxLen)
+    .replace(/```/g, '')       // 避免跳出 code block
+    .replace(/\n{3,}/g, '\n\n') // 壓縮多餘換行
+    .trim();
+}
+
 // --- AI 輔助路由 ---
 app.post('/api/ai/autofill', async (req, res) => {
   if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: 'AI 未設定' });
   const { text } = req.body;
-  if (!text) return res.status(400).json({ error: '缺少文字' });
+  if (!text || typeof text !== 'string') return res.status(400).json({ error: '缺少文字' });
   try {
-    const prompt = `你是一位專業的房地產助手。請從以下房源描述中提取資訊，只回傳 JSON，不要其他文字。\n描述：${text.substring(0,2000)}\nJSON格式：{"title":"","price":0,"type":"apartment","city":"","district":"","address":"","bedrooms":0,"bathrooms":0,"area":0,"floor":0,"totalFloors":0,"managementFee":0,"deposit":"兩個月","amenities":[],"description":""}`;
+    const safeText = sanitizeForPrompt(text, 2000);
+    const prompt = `你是一位專業的房地產助手。請從以下房源描述中提取資訊，只回傳 JSON，不要其他文字。\n描述：${safeText}\nJSON格式：{"title":"","price":0,"type":"apartment","city":"","district":"","address":"","bedrooms":0,"bathrooms":0,"area":0,"floor":0,"totalFloors":0,"managementFee":0,"deposit":"兩個月","amenities":[],"description":""}`;
     const response = await ai.models.generateContent({ model: "gemini-2.0-flash", contents: prompt, config: { responseMimeType: "application/json" } });
     const result = JSON.parse((response.text ?? '').replace(/```json|```/g,'').trim());
     res.json(result);
@@ -1173,8 +1183,14 @@ app.post('/api/ai/autofill', async (req, res) => {
 app.post('/api/ai/description', async (req, res) => {
   if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: 'AI 未設定' });
   const { formData } = req.body;
+  if (!formData || typeof formData !== 'object') return res.status(400).json({ error: '缺少資料' });
   try {
-    const prompt = `你是房地產文案專家，請根據以下資訊生成吸引人的繁體中文房源介紹，直接輸出介紹文字，不要其他說明。標題：${formData.title}，類型：${formData.type}，地點：${formData.city}${formData.district}，格局：${formData.bedrooms}房${formData.bathrooms}衛${formData.area}坪，設施：${(formData.amenities||[]).join('、')}`;
+    const safeTitle = sanitizeForPrompt(String(formData.title || ''), 50);
+    const safeAmenities = (Array.isArray(formData.amenities) ? formData.amenities : [])
+      .map((a: any) => String(a).substring(0, 20))
+      .slice(0, 20)
+      .join('、');
+    const prompt = `你是房地產文案專家，請根據以下資訊生成吸引人的繁體中文房源介紹，直接輸出介紹文字，不要其他說明。標題：${safeTitle}，類型：${formData.type}，地點：${formData.city}${formData.district}，格局：${formData.bedrooms}房${formData.bathrooms}衛${formData.area}坪，設施：${safeAmenities}`;
     const response = await ai.models.generateContent({ model: "gemini-2.0-flash", contents: prompt });
     res.json({ text: response.text });
   } catch(e: any) {
@@ -1186,8 +1202,10 @@ app.post('/api/ai/description', async (req, res) => {
 app.post('/api/ai/tags', async (req, res) => {
   if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: 'AI 未設定' });
   const { description } = req.body;
+  if (!description || typeof description !== 'string') return res.status(400).json({ error: '缺少描述' });
   try {
-    const prompt = `根據以下房源描述生成 3-5 個簡短標籤（例如：近捷運、全新裝潢），只輸出標籤，用逗號分隔，不要其他文字。描述：${(description||'').substring(0,1000)}`;
+    const safeDesc = sanitizeForPrompt(description, 1000);
+    const prompt = `根據以下房源描述生成 3-5 個簡短標籤（例如：近捷運、全新裝潢），只輸出標籤，用逗號分隔，不要其他文字。描述：${safeDesc}`;
     const response = await ai.models.generateContent({ model: "gemini-2.0-flash", contents: prompt });
     res.json({ tags: response.text });
   } catch(e: any) {

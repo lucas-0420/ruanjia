@@ -27,6 +27,8 @@ export default function AdminUsers() {
   const { user, userRole, isAuthReady } = useFirebase();
   const [activeTab, setActiveTab] = useState<Tab>('users');
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
+  const [usersError, setUsersError] = useState<string | null>(null);
+  const [usersLoading, setUsersLoading] = useState(false);
 
   // 事件紀錄狀態
   const [events, setEvents] = useState<AdminEvent[]>([]);
@@ -46,13 +48,23 @@ export default function AdminUsers() {
   useEffect(() => {
     if (!isAdmin) return;
     const fetchUsers = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-      const res = await fetch(API_BASE + '/api/admin/users', { headers: { Authorization: `Bearer ${session.access_token}` } });
-      if (res.ok) {
-        const { users } = await res.json();
-        setAppUsers((users || []).map((r: any) => ({ id: r.id, email: r.email, displayName: r.display_name, photoUrl: r.photo_url, role: r.role || 'user', createdAt: r.created_at })));
+      setUsersLoading(true);
+      setUsersError(null);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) { setUsersError('未登入'); setUsersLoading(false); return; }
+        const res = await fetch(API_BASE + '/api/admin/users', { headers: { Authorization: `Bearer ${session.access_token}` } });
+        if (res.ok) {
+          const { users } = await res.json();
+          setAppUsers((users || []).map((r: any) => ({ id: r.id, email: r.email, displayName: r.display_name, photoUrl: r.photo_url, role: r.role || 'user', createdAt: r.created_at })));
+        } else {
+          const txt = await res.text();
+          setUsersError(`API 錯誤 ${res.status}: ${txt.slice(0, 100)}`);
+        }
+      } catch (e: any) {
+        setUsersError(`連線失敗: ${e.message}`);
       }
+      setUsersLoading(false);
     };
     fetchUsers();
   }, [isAdmin]);
@@ -195,7 +207,7 @@ export default function AdminUsers() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 pt-16">
+    <div className="min-h-screen bg-[#FBF7F3] pt-16">
 
       {/* Confirm Modal */}
       {confirm && (
@@ -219,7 +231,31 @@ export default function AdminUsers() {
         </div>
       )}
 
-      <div className="flex max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 gap-8 py-10">
+      {/* ══ 手機版 Tab Bar（桌面隱藏）══ */}
+      <div className="lg:hidden bg-white border-b border-[#E5D5C5] px-4 pt-3 pb-0">
+        <div className="flex items-center justify-between mb-3">
+          <h1 className="text-lg font-black text-[#3D2B1F]">管理室</h1>
+        </div>
+        <div className="flex gap-1 overflow-x-auto no-scrollbar">
+          {navItems.map(({ key, label, Icon }) => (
+            <button
+              key={key}
+              onClick={() => setActiveTab(key)}
+              className={cn(
+                'flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold whitespace-nowrap border-b-2 transition-colors',
+                activeTab === key
+                  ? 'border-[#F5A623] text-[#F5A623]'
+                  : 'border-transparent text-[#9A7D6B] hover:text-[#7A5C48]'
+              )}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 gap-8 py-4 lg:py-10">
 
         {/* Sidebar */}
         <aside className="hidden lg:flex flex-col gap-4 w-64 shrink-0">
@@ -289,45 +325,40 @@ export default function AdminUsers() {
               </div>
 
               <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-                {filteredUsers.length === 0 ? (
-                  <div className="p-20 text-center text-gray-400">目前沒有用戶</div>
+                {usersLoading ? (
+                  <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-[#F5A623]" /></div>
+                ) : usersError ? (
+                  <div className="p-8 text-center">
+                    <p className="text-red-500 font-bold text-sm mb-1">載入失敗</p>
+                    <p className="text-xs text-gray-400 break-all">{usersError}</p>
+                  </div>
+                ) : filteredUsers.length === 0 ? (
+                  <div className="p-20 text-center text-[#B8A090]">目前沒有用戶</div>
                 ) : filteredUsers.map(u => {
                   const rc = roleConfig[u.role] || roleConfig.user;
                   return (
-                    <div key={u.id} className="px-6 py-4 flex items-center gap-4 hover:bg-gray-50 border-b border-gray-50 last:border-0">
-                      {/* 頭像 */}
+                    <div key={u.id} className="px-4 sm:px-6 py-3 sm:py-4 flex items-center gap-3 hover:bg-[#FBF7F3] border-b border-[#F2E9DF] last:border-0">
                       {u.photoUrl ? (
-                        <img src={u.photoUrl} alt="" className="w-10 h-10 rounded-full bg-gray-100 shrink-0 object-cover" referrerPolicy="no-referrer" />
+                        <img src={u.photoUrl} alt="" className="w-9 h-9 rounded-full bg-[#F2E9DF] shrink-0 object-cover" referrerPolicy="no-referrer" />
                       ) : (
-                        <div className="w-10 h-10 rounded-full bg-gray-100 shrink-0 flex items-center justify-center text-gray-400 font-bold text-sm">
+                        <div className="w-9 h-9 rounded-full bg-[#F2E9DF] shrink-0 flex items-center justify-center text-[#B8A090] font-bold text-sm">
                           {(u.displayName || u.email || '?')[0].toUpperCase()}
                         </div>
                       )}
-
-                      {/* 姓名 + email */}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="font-bold text-gray-900 truncate">{u.displayName || '未命名'}</p>
-                          {/* 角色徽章（顯示用，一目了然） */}
-                          <span className={cn('flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full shrink-0', rc.color)}>
-                            <rc.Icon className="w-3 h-3" />
-                            {rc.label}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="text-sm font-bold text-[#3D2B1F] truncate">{u.displayName || '未命名'}</p>
+                          <span className={cn('flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0', rc.color)}>
+                            <rc.Icon className="w-2.5 h-2.5" />{rc.label}
                           </span>
                         </div>
-                        <p className="text-sm text-gray-400 truncate">{u.email}</p>
+                        <p className="text-xs text-[#9A7D6B] truncate">{u.email}</p>
                       </div>
-
-                      {/* 加入時間 */}
-                      <span className="text-xs text-gray-300 shrink-0 hidden sm:block">
-                        {new Date(u.createdAt).toLocaleDateString('zh-TW')}
-                      </span>
-
-                      {/* 更改角色下拉 */}
                       <select
                         value={u.role}
                         onChange={e => handleRoleChange(u.id, e.target.value)}
                         className={cn(
-                          'shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer focus:outline-none transition-all',
+                          'shrink-0 px-2 py-1.5 rounded-xl text-[11px] font-bold border cursor-pointer focus:outline-none',
                           u.role === 'admin' ? 'bg-gray-900 text-white border-gray-900' :
                           u.role === 'agent' ? 'bg-orange-50 text-orange-600 border-orange-200' :
                           'bg-gray-50 text-gray-500 border-gray-200'
@@ -381,41 +412,30 @@ export default function AdminUsers() {
                 ) : filteredProps.length === 0 ? (
                   <div className="p-20 text-center text-gray-400">沒有房源</div>
                 ) : filteredProps.map(prop => (
-                  <div key={prop.id} className={cn('flex items-center gap-4 px-6 py-4 hover:bg-gray-50/70 transition-colors border-b border-gray-50 last:border-0', prop.status === 'archived' && 'opacity-60')}>
-                    <Link to={`/property/${prop.id}`} className="w-20 h-14 rounded-xl overflow-hidden shrink-0 bg-gray-100 hover:opacity-80 transition-opacity">
+                  <div key={prop.id} className={cn('flex items-center gap-3 px-4 sm:px-6 py-3 hover:bg-[#FBF7F3] border-b border-[#F2E9DF] last:border-0', prop.status === 'archived' && 'opacity-55')}>
+                    <Link to={`/property/${prop.id}`} className="w-14 h-14 rounded-2xl overflow-hidden shrink-0 bg-[#F2E9DF]">
                       <img src={prop.images[0]} alt={prop.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     </Link>
                     <div className="flex-1 min-w-0">
-                      <Link to={`/property/${prop.id}`} className="font-bold text-gray-900 truncate block hover:text-orange-600 transition-colors">{prop.title}</Link>
-                      <p className="text-sm text-gray-500 truncate mt-0.5">{prop.location.city}{prop.location.district} · NT${prop.price.toLocaleString()} / 月</p>
+                      <Link to={`/property/${prop.id}`} className="text-sm font-bold text-[#3D2B1F] truncate block hover:text-[#F5A623] transition-colors">{prop.title}</Link>
+                      <p className="text-xs text-[#9A7D6B] truncate mt-0.5">{prop.location.district} · NT${prop.price.toLocaleString()}</p>
                     </div>
                     <div className="shrink-0">
-                      {savingId === prop.id ? (
-                        <div className="w-28 h-9 flex items-center justify-center">
-                          <Loader2 className="w-4 h-4 animate-spin text-orange-600" />
-                        </div>
-                      ) : (
-                        <select
-                          value={prop.status || 'active'}
-                          onChange={e => handleStatusChange(prop.id, prop.title, e.target.value as 'active' | 'archived')}
-                          className={cn(
-                            'text-xs font-bold px-3 py-2 rounded-xl border-2 appearance-none cursor-pointer focus:outline-none transition-all',
-                            prop.status === 'archived'
-                              ? 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-400'
-                              : 'border-green-200 bg-green-50 text-green-700 hover:border-green-400'
-                          )}
-                        >
+                      {savingId === prop.id ? <Loader2 className="w-4 h-4 animate-spin text-[#F5A623]" /> : (
+                        <select value={prop.status || 'active'} onChange={e => handleStatusChange(prop.id, prop.title, e.target.value as 'active' | 'archived')}
+                          className={cn('text-[11px] font-bold px-2 py-1.5 rounded-xl border-2 appearance-none cursor-pointer focus:outline-none',
+                            prop.status === 'archived' ? 'border-gray-200 bg-gray-50 text-gray-500' : 'border-green-200 bg-green-50 text-green-700')}>
                           <option value="active">✓ 上架中</option>
                           <option value="archived">✕ 已下架</option>
                         </select>
                       )}
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <Link to={`/admin/edit/${prop.id}`} className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-400 transition-all">
-                        <Edit className="w-4 h-4" />
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Link to={`/admin/edit/${prop.id}`} className="w-8 h-8 rounded-xl border border-[#E5D5C5] flex items-center justify-center text-[#B8A090] hover:text-[#F5A623] hover:border-[#F5A623] transition-all">
+                        <Edit className="w-3.5 h-3.5" />
                       </Link>
-                      <button onClick={() => handleDelete(prop.id, prop.title)} className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400 hover:text-red-600 hover:border-red-400 transition-all">
-                        <Trash2 className="w-4 h-4" />
+                      <button onClick={() => handleDelete(prop.id, prop.title)} className="w-8 h-8 rounded-xl border border-[#E5D5C5] flex items-center justify-center text-[#B8A090] hover:text-red-500 hover:border-red-300 transition-all">
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>

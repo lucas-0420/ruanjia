@@ -3,6 +3,7 @@ import { APIProvider, Map, InfoWindow, useMap } from '@vis.gl/react-google-maps'
 import { MarkerClusterer, GridAlgorithm } from '@googlemaps/markerclusterer';
 import { Property } from '../types';
 import { Home, Navigation, Search, X } from 'lucide-react';
+import { CITY_CENTERS } from '../constants';
 
 interface MapBounds {
   north: number; south: number; east: number; west: number;
@@ -15,13 +16,15 @@ interface MapComponentProps {
   showMapTypeControl?: boolean;
   enableClustering?: boolean;
   onBoundsChange?: (bounds: MapBounds) => void;
-  filterCity?: string; // 目前篩選的城市，用來無物件時也能跳轉
-  filterDistricts?: string[]; // 目前篩選的地區
+  filterCity?: string;
+  filterDistricts?: string[];
+  externalCenter?: { lat: number; lng: number } | null; // 外部控制地圖中心（地標搜尋）
 }
 
-const API_KEY = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY || '';
+import { GOOGLE_MAPS_API_KEY } from '../env';
+const API_KEY = GOOGLE_MAPS_API_KEY || '';
 
-export default function MapComponent({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false, enableClustering = false, onBoundsChange, filterCity, filterDistricts }: MapComponentProps) {
+export default function MapComponent({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false, enableClustering = false, onBoundsChange, filterCity, filterDistricts, externalCenter }: MapComponentProps) {
   if (!API_KEY) {
     return (
       <div className="w-full h-full bg-gray-100 rounded-[40px] flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-gray-200">
@@ -48,46 +51,35 @@ export default function MapComponent({ properties, onPropertyClick, showSearch =
           onBoundsChange={onBoundsChange}
           filterCity={filterCity}
           filterDistricts={filterDistricts}
+          externalCenter={externalCenter}
         />
       </APIProvider>
     </div>
   );
 }
 
-function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false, enableClustering = false, onBoundsChange, filterCity, filterDistricts }: MapComponentProps) {
+function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeControl = false, enableClustering = false, onBoundsChange, filterCity, filterDistricts, externalCenter }: MapComponentProps) {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const map = useMap();
+
+  // 外部地標搜尋：收到新座標時移動地圖
+  useEffect(() => {
+    if (!map || !externalCenter) return;
+    map.panTo(externalCenter);
+    map.setZoom(16);
+  }, [map, externalCenter]);
 
   // refs for clustering (避免 React re-render 重建 markers)
   const clustererRef = useRef<MarkerClusterer | null>(null);
   const individualMarkersRef = useRef<google.maps.Marker[]>([]);
   const districtMarkersRef = useRef<google.maps.Marker[]>([]);
-  const isDistrictLayerRef = useRef<boolean>(true);
+  const cityMarkersRef = useRef<google.maps.Marker[]>([]);
+  // 'city' | 'district' | 'individual'
+  const layerRef = useRef<'city' | 'district' | 'individual'>('city');
   const lastFitKeyRef = useRef<string>('');
 
   // 城市中心座標（無物件時也能跳轉）
-  const CITY_CENTERS: Record<string, { lat: number; lng: number }> = {
-    '台北市': { lat: 25.0330, lng: 121.5654 },
-    '新北市': { lat: 25.0169, lng: 121.4627 },
-    '桃園市': { lat: 24.9936, lng: 121.3010 },
-    '台中市': { lat: 24.1477, lng: 120.6736 },
-    '台南市': { lat: 22.9999, lng: 120.2269 },
-    '高雄市': { lat: 22.6273, lng: 120.3014 },
-    '新竹市': { lat: 24.8138, lng: 120.9675 },
-    '新竹縣': { lat: 24.8384, lng: 121.0177 },
-    '苗栗縣': { lat: 24.5602, lng: 120.8214 },
-    '彰化縣': { lat: 24.0518, lng: 120.5161 },
-    '南投縣': { lat: 23.9610, lng: 120.9718 },
-    '雲林縣': { lat: 23.7092, lng: 120.4313 },
-    '嘉義市': { lat: 23.4801, lng: 120.4491 },
-    '嘉義縣': { lat: 23.4518, lng: 120.2554 },
-    '屏東縣': { lat: 22.5519, lng: 120.5487 },
-    '宜蘭縣': { lat: 24.7021, lng: 121.7377 },
-    '花蓮縣': { lat: 23.9872, lng: 121.6015 },
-    '台東縣': { lat: 22.7972, lng: 121.0714 },
-    '澎湖縣': { lat: 23.5711, lng: 119.5793 },
-    '基隆市': { lat: 25.1276, lng: 121.7392 },
-  };
+  // CITY_CENTERS 從 constants.ts 引入
 
   // Auto-fit：篩選城市/地區改變時跳轉，拖曳/縮放不觸發
   useEffect(() => {
@@ -144,64 +136,120 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
   useEffect(() => {
     if (!map || !enableClustering) return;
 
-    // ── 行政區 markers ──
-    const districtMap: Record<string, { count: number; lat: number; lng: number; lats: number[]; lngs: number[] }> = {};
+    // 過濾掉預設佔位座標（台北 25.033, 121.5654）
+    const isPlaceholderCoord = (lat: number, lng: number) =>
+      Math.abs(lat - 25.033) < 0.005 && Math.abs(lng - 121.5654) < 0.005;
+
+    type GeoGroup = { count: number; lat: number; lng: number; lats: number[]; lngs: number[] };
+
+    // 工具：計算群組平均座標
+    const calcCenter = (groups: Record<string, GeoGroup>) => {
+      Object.values(groups).forEach(g => {
+        if (g.lats.length > 0) {
+          g.lat = g.lats.reduce((a, b) => a + b, 0) / g.lats.length;
+          g.lng = g.lngs.reduce((a, b) => a + b, 0) / g.lngs.length;
+        }
+      });
+    };
+
+    // 工具：建泡泡 marker SVG
+    const makeBubbleMarker = (
+      name: string, count: number, lat: number, lng: number,
+      onClick: () => void, visible: boolean, size = 52, color = '#FFB830'
+    ) => {
+      const w = Math.max(name.length * 13 + 30, 68);
+      const r = size / 2 - 2;
+      const cy = size / 2;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${size}">
+        <circle cx="${w/2}" cy="${cy}" r="${r}" fill="${color}" fill-opacity="0.95" stroke="white" stroke-width="2"/>
+        <text x="${w/2}" y="${cy - 5}" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="white">${name}</text>
+        <text x="${w/2}" y="${cy + 9}" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="white">${count}間</text>
+      </svg>`;
+      const marker = new google.maps.Marker({
+        position: { lat, lng },
+        map: visible ? map : null,
+        icon: { url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`, scaledSize: new google.maps.Size(w, size), anchor: new google.maps.Point(w/2, cy) },
+        zIndex: 1000,
+      });
+      marker.addListener('click', onClick);
+      return marker;
+    };
+
+    // ── 縣市層 ──
+    const cityMap: Record<string, GeoGroup> = {};
+    properties.forEach(p => {
+      const c = p.location.city || '未知';
+      if (!cityMap[c]) cityMap[c] = { count: 0, lat: 0, lng: 0, lats: [], lngs: [] };
+      cityMap[c].count++;
+      if (!isPlaceholderCoord(p.location.lat, p.location.lng)) {
+        cityMap[c].lats.push(p.location.lat);
+        cityMap[c].lngs.push(p.location.lng);
+      }
+    });
+    calcCenter(cityMap);
+
+    const cMarkers = Object.entries(cityMap)
+      .filter(([, g]) => g.lat !== 0 && g.lng !== 0)
+      .map(([name, { count, lat, lng }]) =>
+        makeBubbleMarker(name, count, lat, lng,
+          () => { map.panTo({ lat, lng }); map.setZoom(12); },
+          layerRef.current === 'city', 56, '#F5A623'
+        )
+      );
+    cityMarkersRef.current = cMarkers;
+
+    // ── 行政區層 ──
+    const districtMap: Record<string, GeoGroup> = {};
     properties.forEach(p => {
       const d = p.location.district || '未知';
       if (!districtMap[d]) districtMap[d] = { count: 0, lat: 0, lng: 0, lats: [], lngs: [] };
       districtMap[d].count++;
-      districtMap[d].lats.push(p.location.lat);
-      districtMap[d].lngs.push(p.location.lng);
+      if (!isPlaceholderCoord(p.location.lat, p.location.lng)) {
+        districtMap[d].lats.push(p.location.lat);
+        districtMap[d].lngs.push(p.location.lng);
+      }
     });
-    Object.values(districtMap).forEach(d => {
-      d.lat = d.lats.reduce((a, b) => a + b, 0) / d.lats.length;
-      d.lng = d.lngs.reduce((a, b) => a + b, 0) / d.lngs.length;
-    });
+    calcCenter(districtMap);
 
-    const dMarkers = Object.entries(districtMap).map(([name, { count, lat, lng }]) => {
-      const w = Math.max(name.length * 13 + 30, 64);
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="52">
-        <circle cx="${w/2}" cy="26" r="24" fill="#FFB830" fill-opacity="0.95" stroke="white" stroke-width="2"/>
-        <text x="${w/2}" y="21" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="white">${name}</text>
-        <text x="${w/2}" y="36" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="white">${count}間</text>
-      </svg>`;
-      const marker = new google.maps.Marker({
-        position: { lat, lng },
-        map: isDistrictLayerRef.current ? map : null,
-        icon: { url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`, scaledSize: new google.maps.Size(w, 52), anchor: new google.maps.Point(w/2, 26) },
-        zIndex: 1000,
-      });
-      marker.addListener('click', () => { map.setZoom(14); map.panTo({ lat, lng }); });
-      return marker;
-    });
+    const dMarkers = Object.entries(districtMap)
+      .filter(([, g]) => g.lat !== 0 && g.lng !== 0)
+      .map(([name, { count, lat, lng }]) =>
+        makeBubbleMarker(name, count, lat, lng,
+          () => { map.panTo({ lat, lng }); map.setZoom(14); },
+          layerRef.current === 'district', 48, '#FFB830'
+        )
+      );
     districtMarkersRef.current = dMarkers;
 
-    // ── 個別物件 markers（給 clusterer 用）──
-    const iMarkers = properties.map(property => {
-      const label = `$${(property.price / 10000).toFixed(1)}萬`;
-      const marker = new google.maps.Marker({
-        position: { lat: property.location.lat, lng: property.location.lng },
-        title: property.title,
-        icon: {
-          url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
-            `<svg xmlns="http://www.w3.org/2000/svg" width="68" height="30">
-              <rect x="1" y="1" width="66" height="22" rx="11" fill="white" stroke="#E8650A" stroke-width="2"/>
-              <text x="34" y="16" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="#1a1a1a">${label}</text>
-              <polygon points="29,23 39,23 34,30" fill="#E8650A"/>
-            </svg>`
-          )}`,
-          scaledSize: new google.maps.Size(68, 30),
-          anchor: new google.maps.Point(34, 30),
-        },
+    // ── 個別物件層 ──
+    const iMarkers = properties
+      .filter(p => !isPlaceholderCoord(p.location.lat, p.location.lng))
+      .map(property => {
+        const label = `$${(property.price / 10000).toFixed(1)}萬`;
+        const marker = new google.maps.Marker({
+          position: { lat: property.location.lat, lng: property.location.lng },
+          title: property.title,
+          map: layerRef.current === 'individual' ? map : null,
+          icon: {
+            url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+              `<svg xmlns="http://www.w3.org/2000/svg" width="68" height="30">
+                <rect x="1" y="1" width="66" height="22" rx="11" fill="white" stroke="#E8650A" stroke-width="2"/>
+                <text x="34" y="16" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="#1a1a1a">${label}</text>
+                <polygon points="29,23 39,23 34,30" fill="#E8650A"/>
+              </svg>`
+            )}`,
+            scaledSize: new google.maps.Size(68, 30),
+            anchor: new google.maps.Point(34, 30),
+          },
+        });
+        marker.addListener('click', () => { setSelectedProperty(property); onPropertyClick?.(property); });
+        return marker;
       });
-      marker.addListener('click', () => { setSelectedProperty(property); onPropertyClick?.(property); });
-      return marker;
-    });
     individualMarkersRef.current = iMarkers;
 
-    // ── MarkerClusterer（縮小時自動聚合）──
+    // ── MarkerClusterer ──
     const clusterer = new MarkerClusterer({
-      map: isDistrictLayerRef.current ? null as any : map,
+      map: layerRef.current === 'individual' ? map : null as any,
       markers: iMarkers,
       algorithm: new GridAlgorithm({ gridSize: 60 }),
       renderer: {
@@ -221,26 +269,35 @@ function MapInner({ properties, onPropertyClick, showSearch = true, showMapTypeC
     });
     clustererRef.current = clusterer;
 
-    // ── zoom 切層（用 setMap，不重建）──
+    // ── 切層函數 ──
+    const applyLayer = (layer: 'city' | 'district' | 'individual') => {
+      if (layer === layerRef.current) return;
+      layerRef.current = layer;
+      cMarkers.forEach(m => m.setMap(layer === 'city' ? map : null));
+      dMarkers.forEach(m => m.setMap(layer === 'district' ? map : null));
+      iMarkers.forEach(m => m.setMap(layer === 'individual' ? map : null));
+      clusterer.setMap(layer === 'individual' ? map : null as any);
+    };
+
+    // ── zoom 監聽，三層切換 ──
+    // zoom < 11 → 縣市，11–13 → 行政區，≥ 14 → 個別
     const zListener = map.addListener('zoom_changed', () => {
       const z = map.getZoom() ?? 7;
-      const wantDistrict = z < 14;
-      if (wantDistrict === isDistrictLayerRef.current) return;
-      isDistrictLayerRef.current = wantDistrict;
-      if (wantDistrict) {
-        dMarkers.forEach(m => m.setMap(map));
-        iMarkers.forEach(m => m.setMap(null));
-        clusterer.setMap(null as any);
-      } else {
-        dMarkers.forEach(m => m.setMap(null));
-        iMarkers.forEach(m => m.setMap(map));
-        clusterer.setMap(map);
-      }
+      if (z < 11) applyLayer('city');
+      else if (z < 14) applyLayer('district');
+      else applyLayer('individual');
     });
+
+    // 初始化層
+    const initZ = map.getZoom() ?? 7;
+    if (initZ < 11) applyLayer('city');
+    else if (initZ < 14) applyLayer('district');
+    else applyLayer('individual');
 
     return () => {
       google.maps.event.removeListener(zListener);
       clusterer.clearMarkers();
+      cMarkers.forEach(m => m.setMap(null));
       dMarkers.forEach(m => m.setMap(null));
       iMarkers.forEach(m => m.setMap(null));
     };

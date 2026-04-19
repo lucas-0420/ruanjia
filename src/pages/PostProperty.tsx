@@ -1,4 +1,6 @@
 import { API_BASE } from '../lib/api';
+import { GOOGLE_MAPS_API_KEY } from '../env';
+import { toast } from '../components/Toast';
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useFirebase } from '../context/SupabaseContext';
@@ -285,10 +287,10 @@ export default function PostProperty() {
     if (!files.length || !user) return;
 
     const invalid = files.find((f: File) => !f.type.startsWith('image/') || f.size > 5 * 1024 * 1024);
-    if (invalid) { alert('請上傳圖片檔案，每張不超過 5MB'); return; }
+    if (invalid) { toast('請上傳圖片檔案，每張不超過 5MB', 'error'); return; }
 
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { alert('未登入'); return; }
+    if (!session) { toast('請先登入', 'info'); return; }
 
     setUploading(true);
     setUploadingCount(files.length);
@@ -307,7 +309,7 @@ export default function PostProperty() {
       }));
       setFormData(prev => ({ ...prev, images: [...prev.images, ...urls] }));
     } catch (error: any) {
-      alert(`圖片上傳失敗：${error?.message}`);
+      toast(`圖片上傳失敗：${error?.message}`, 'error');
     } finally {
       setUploading(false);
       setUploadingCount(0);
@@ -318,10 +320,10 @@ export default function PostProperty() {
   const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] as File | undefined;
     if (!file) return;
-    if (!file.type.startsWith('video/')) { alert('請上傳影片檔案'); return; }
-    if (file.size > 50 * 1024 * 1024) { alert('影片大小不能超過 50MB'); return; }
+    if (!file.type.startsWith('video/')) { toast('請上傳影片檔案', 'error'); return; }
+    if (file.size > 50 * 1024 * 1024) { toast('影片大小不能超過 50MB', 'error'); return; }
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { alert('未登入'); return; }
+    if (!session) { toast('請先登入', 'info'); return; }
     setUploadingVideo(true);
     try {
       const res = await fetch(API_BASE + '/api/upload/image', {
@@ -333,7 +335,7 @@ export default function PostProperty() {
       if (!res.ok) throw new Error(json.error || '上傳失敗');
       setVideo(json.url);
     } catch (err: any) {
-      alert(`影片上傳失敗：${err?.message}`);
+      toast(`影片上傳失敗：${err?.message}`, 'error');
     } finally {
       setUploadingVideo(false);
       if (videoInputRef.current) videoInputRef.current.value = '';
@@ -376,7 +378,7 @@ export default function PostProperty() {
         type: formData.type,
         location: await (async () => {
           let lat = 25.0330, lng = 121.5654;
-          const apiKey = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY;
+          const apiKey = GOOGLE_MAPS_API_KEY;
           if (apiKey) {
             try {
               const addr = encodeURIComponent(`${formData.city}${formData.district}${formData.address}台灣`);
@@ -413,8 +415,6 @@ export default function PostProperty() {
         tags: formData.tags
       };
 
-      console.log('Submitting property data:', propertyData);
-
       const { mapPropertyToDB } = await import('../context/SupabaseContext');
       const dbData = mapPropertyToDB(propertyData, user.id);
 
@@ -446,12 +446,12 @@ export default function PostProperty() {
         error = await trySave(dataWithoutLineId);
       }
       if (error) throw error;
-      alert(id ? '房源更新成功！' : '房源刊登成功！');
+      toast(id ? '房源更新成功！' : '房源刊登成功！', 'success');
       navigate('/listings');
     } catch (error: any) {
       console.error("Submission error:", error);
       const errorMessage = error?.message || '未知錯誤';
-      alert(`刊登失敗：${errorMessage}\n請檢查是否所有必填欄位都已正確填寫。`);
+      toast(`刊登失敗：${errorMessage}`, 'error');
 
     } finally {
       setLoading(false);

@@ -1,4 +1,6 @@
 import { API_BASE } from '../lib/api';
+import { GOOGLE_MAPS_API_KEY } from '../env';
+import { toast } from '../components/Toast';
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
@@ -7,6 +9,7 @@ import {
   Calendar, Info, Layers, XCircle, Loader2, Expand, X
 } from 'lucide-react';
 import NearbyPlacesPanel from '../components/NearbyPlacesPanel';
+import PropertyCard from '../components/PropertyCard';
 import { cn } from '../lib/utils';
 import MapComponent from '../components/MapComponent';
 import { supabase } from '../supabase';
@@ -29,6 +32,9 @@ export default function PropertyDetail() {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [showMapModal, setShowMapModal] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [showFullDesc, setShowFullDesc] = useState(false);
+  const [descOverflows, setDescOverflows] = useState(false);
+  const descRef = useRef<HTMLParagraphElement>(null);
 
 
   useEffect(() => {
@@ -61,7 +67,7 @@ export default function PropertyDetail() {
           }
 
           // Geocode 地址取得真實座標
-          const apiKey = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY;
+          const apiKey = GOOGLE_MAPS_API_KEY;
           if (apiKey) {
             const addr = encodeURIComponent(
               `${propData.location.city}${propData.location.district}${propData.location.address}台灣`
@@ -79,7 +85,7 @@ export default function PropertyDetail() {
           }
 
           setProperty(propData);
-          const { data: similar } = await supabase.from('properties').select('*').neq('status', 'archived').eq('city', propData.location.city).neq('id', id).limit(4);
+          const { data: similar } = await supabase.from('properties').select('*').neq('status', 'archived').eq('city', propData.location.city).neq('id', id).limit(10);
           setSimilarProperties((similar || []).map(mapPropertyFromDB));
         }
       } catch (error) {
@@ -90,6 +96,12 @@ export default function PropertyDetail() {
     }
     fetchProperty();
   }, [id]);
+
+  // 偵測房源介紹是否超過 8 行
+  useEffect(() => {
+    if (!descRef.current) return;
+    setDescOverflows(descRef.current.scrollHeight > descRef.current.clientHeight);
+  }, [property]);
 
   const handleShare = async () => {
     if (navigator.share) {
@@ -106,7 +118,7 @@ export default function PropertyDetail() {
       // Fallback: Copy to clipboard
       try {
         await navigator.clipboard.writeText(window.location.href);
-        alert('網址已複製到剪貼簿！');
+        toast('網址已複製到剪貼簿！', 'success');
       } catch (error) {
         console.error('Error copying to clipboard:', error);
       }
@@ -116,7 +128,7 @@ export default function PropertyDetail() {
   const handleBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) {
-      alert('請先登入以預約看房');
+      toast('請先登入以預約看房', 'info');
       return;
     }
     if (!property) return;
@@ -134,11 +146,11 @@ export default function PropertyDetail() {
         status: 'pending',
       });
       if (error) throw error;
-      alert('預約成功！管理員將會與您聯繫。');
+      toast('預約成功！管理員將會與您聯繫。', 'success');
       setShowBookingModal(false);
     } catch (error) {
       console.error('Booking error:', error);
-      alert('預約失敗，請稍後再試。');
+      toast('預約失敗，請稍後再試。', 'error');
     } finally {
       setIsBooking(false);
     }
@@ -146,7 +158,7 @@ export default function PropertyDetail() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) { alert('請先登入以發送訊息'); return; }
+    if (!user) { toast('請先登入以發送訊息', 'info'); return; }
     if (!property) return;
 
     setIsSending(true);
@@ -169,12 +181,12 @@ export default function PropertyDetail() {
         }),
       });
       if (!res.ok) throw new Error(await res.text());
-      alert('訊息已發送！');
+      toast('訊息已發送！', 'success');
       setShowMessageModal(false);
       setMessageContent('');
     } catch (error: any) {
       console.error('Message error:', error);
-      alert(`發送失敗：${error?.message || '請稍後再試'}`);
+      toast(`發送失敗：${error?.message || '請稍後再試'}`, 'error');
     } finally {
       setIsSending(false);
     }
@@ -213,10 +225,10 @@ export default function PropertyDetail() {
   }
 
   return (
-    <div className="min-h-screen bg-white pt-24 pb-32 lg:pb-20">
-      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-10">
+    <div className="min-h-screen bg-white pt-20 sm:pt-24 pb-32 lg:pb-20">
+      <div className="max-w-[1440px] mx-auto px-3 sm:px-6 lg:px-10">
         {/* Breadcrumbs */}
-        <div className="flex items-center gap-4 mb-8">
+        <div className="flex items-center gap-3 mb-4 sm:mb-8">
           <Link to="/listings" className="p-2.5 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
             <ChevronLeft className="w-5 h-5 text-gray-600" />
           </Link>
@@ -246,15 +258,17 @@ export default function PropertyDetail() {
         {/* ══ 2-column grid ══
              左欄(60%)：照片 + 詳細內容（自然流動）
              右欄(1fr)：單一 sticky div，Info + 屋主卡片全包在內（Step2 再用 JS 讓屋主卡片隨頁）*/}
-        <div className="flex flex-col lg:grid lg:grid-cols-[60%_1fr] gap-8 mb-14 lg:items-start">
+        {/* 手機：flex-col，order: 照片(1)→Info(2)→詳細內容(3)
+            桌面：grid 兩欄（左：照片+詳細，右：sticky Info）*/}
+        <div className="flex flex-col lg:grid lg:grid-cols-[60%_1fr] gap-3 sm:gap-8 mb-14 lg:items-start">
 
           {/* ══ 左欄：照片 + 詳細內容 ══ */}
-          <div className="flex flex-col gap-10">
+          <div className="contents lg:flex lg:flex-col lg:gap-10">
 
             {/* 照片區 */}
-            <div className="space-y-3">
+            <div className="order-1 space-y-2 sm:space-y-3">
               <div
-                className="w-full h-[420px] rounded-2xl overflow-hidden bg-[#F2E9DF] cursor-zoom-in relative group"
+                className="w-full h-[240px] sm:h-[420px] rounded-2xl overflow-hidden bg-[#F2E9DF] cursor-zoom-in relative group"
                 onClick={() => setLightboxIndex(activeImageIndex)}
               >
                 <img
@@ -287,13 +301,13 @@ export default function PropertyDetail() {
                 )}
               </div>
               {/* 縮圖列 */}
-              <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+              <div className="flex gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar pb-1">
                 {property.images.map((img, i) => (
                   <button
                     key={i}
                     onClick={() => setActiveImageIndex(i)}
                     className={cn(
-                      'shrink-0 w-[72px] h-[72px] rounded-xl overflow-hidden border-2 transition-all',
+                      'shrink-0 w-[56px] h-[56px] sm:w-[72px] sm:h-[72px] rounded-xl overflow-hidden border-2 transition-all',
                       activeImageIndex === i
                         ? 'border-[#F5A623] shadow-md'
                         : 'border-transparent opacity-55 hover:opacity-90'
@@ -306,12 +320,51 @@ export default function PropertyDetail() {
             </div>
 
             {/* 詳細內容 */}
-            <div className="space-y-10">
+            <div className="order-3 space-y-6 sm:space-y-10">
+
+              {/* 詳細資訊 - 手機顯示，桌面隱藏 */}
+              <div className="sm:hidden bg-[#FBF7F3] rounded-xl p-3 border border-[#F2E9DF]">
+                <p className="text-[10px] font-bold text-[#B8A090] mb-2 flex items-center gap-1">
+                  <Info className="w-3 h-3 text-[#F5A623]" />
+                  詳細資訊
+                </p>
+                <div className="grid grid-cols-2 gap-x-3">
+                  {[
+                    { label: '管理費', value: property.features.managementFee ? `${property.features.managementFee.toLocaleString()}元/月` : '無' },
+                    { label: '押金',   value: property.features.deposit || '面議' },
+                    { label: '最短租期', value: '一年' },
+                    { label: '開伙',   value: '可' },
+                    { label: '養寵物', value: property.amenities.includes('可養寵物') ? '可' : '不可' },
+                    { label: '身分限制', value: '無' },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="flex justify-between py-1.5 border-b border-[#F2E9DF]">
+                      <span className="text-[11px] text-[#9A7D6B]">{label}</span>
+                      <span className="text-[11px] font-bold text-[#3D2B1F]">{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
               {/* 房源介紹 */}
-              <div className="border-t border-[#F2E9DF] pt-8">
+              <div className="border-t border-[#F2E9DF] pt-6 sm:pt-8">
                 <h2 className="text-xl font-bold text-[#3D2B1F] mb-4">房源介紹</h2>
-                <p className="text-[#7A5C48] text-base leading-relaxed whitespace-pre-line">{property.description}</p>
+                <p
+                  ref={descRef}
+                  className={cn(
+                    "text-[#7A5C48] text-base leading-relaxed whitespace-pre-line",
+                    !showFullDesc && "line-clamp-[8]"
+                  )}
+                >
+                  {property.description}
+                </p>
+                {descOverflows && (
+                  <button
+                    onClick={() => setShowFullDesc(v => !v)}
+                    className="mt-3 w-full py-2 rounded-xl border border-[#E5D5C5] bg-[#FBF7F3] text-sm font-bold text-[#7A5C48] hover:border-[#F5A623] hover:text-[#F5A623] transition-colors"
+                  >
+                    {showFullDesc ? '收起 ▲' : '顯示更多 ▼'}
+                  </button>
+                )}
               </div>
 
               {/* 設施設備 */}
@@ -330,7 +383,7 @@ export default function PropertyDetail() {
               {/* 地理位置 */}
               <div>
                 <h2 className="text-xl font-bold text-[#3D2B1F] mb-4">地理位置</h2>
-                <div className="relative rounded-2xl overflow-hidden border border-[#E5D5C5] shadow-sm" style={{ height: 300 }}>
+                <div className="relative rounded-2xl overflow-hidden border border-[#E5D5C5] shadow-sm" style={{ height: 225 }}>
                   {property.location.lat && property.location.lng ? (
                     <>
                       <iframe
@@ -359,11 +412,11 @@ export default function PropertyDetail() {
             </div>
           </div>
 
-          {/* ══ 右欄：單一 sticky div（Info + 屋主卡片）══ */}
-          <div className="lg:sticky lg:top-24 flex flex-col gap-3">
+          {/* ══ 右欄：單一 sticky div（Info + 屋主卡片）手機排在照片後、詳細內容前 ══ */}
+          <div className="order-2 lg:sticky lg:top-24 flex flex-col gap-2 sm:gap-3">
 
             {/* Info 區（badge~詳細資訊）*/}
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2 sm:gap-3">
 
             {/* Badges */}
             <div className="flex flex-wrap gap-1.5">
@@ -391,9 +444,9 @@ export default function PropertyDetail() {
             </div>
 
             {/* 租金 */}
-            <div className="bg-[#FFF8F0] rounded-xl px-4 py-3 border border-[#FFE8CC]">
+            <div className="bg-[#FFF8F0] rounded-xl px-3 py-2 sm:px-4 sm:py-3 border border-[#FFE8CC]">
               <p className="text-[10px] text-[#B8A090] font-bold mb-0.5">月租金</p>
-              <p className="text-2xl font-black text-[#F5A623]">
+              <p className="text-xl sm:text-2xl font-black text-[#F5A623]">
                 NT$ {property.price.toLocaleString()}
                 <span className="text-xs font-normal text-[#9A7D6B] ml-1">/月</span>
               </p>
@@ -403,14 +456,14 @@ export default function PropertyDetail() {
             </div>
 
             {/* 規格 4 格 */}
-            <div className="grid grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-4 gap-1 sm:gap-1.5">
               {[
                 { icon: Bed,      label: '格局', value: `${property.features.bedrooms} 房` },
                 { icon: Bath,     label: '衛浴', value: `${property.features.bathrooms} 衛` },
                 { icon: Maximize, label: '坪數', value: `${property.features.area} 坪` },
                 { icon: Layers,   label: '樓層', value: `${property.features.floor}/${property.features.totalFloors || '--'}F` },
               ].map(({ icon: Icon, label, value }) => (
-                <div key={label} className="flex flex-col items-center gap-1 bg-[#FBF7F3] rounded-xl py-2 border border-[#F2E9DF]">
+                <div key={label} className="flex flex-col items-center gap-0.5 sm:gap-1 bg-[#FBF7F3] rounded-xl py-1.5 sm:py-2 border border-[#F2E9DF]">
                   <Icon className="w-3.5 h-3.5 text-[#F5A623]" />
                   <p className="text-[9px] text-[#B8A090] font-bold">{label}</p>
                   <p className="text-xs font-bold text-[#3D2B1F]">{value}</p>
@@ -418,22 +471,22 @@ export default function PropertyDetail() {
               ))}
             </div>
 
-            {/* 詳細資訊 */}
-            <div className="bg-[#FBF7F3] rounded-xl p-3 border border-[#F2E9DF]">
+            {/* 詳細資訊 - 手機隱藏，桌面顯示 */}
+            <div className="hidden sm:block bg-[#FBF7F3] rounded-xl p-3 border border-[#F2E9DF]">
               <p className="text-[10px] font-bold text-[#B8A090] mb-2 flex items-center gap-1">
                 <Info className="w-3 h-3 text-[#F5A623]" />
                 詳細資訊
               </p>
-              <div>
+              <div className="grid grid-cols-2 gap-x-3">
                 {[
-                  { label: '管理費', value: property.features.managementFee ? `${property.features.managementFee.toLocaleString()} 元/月` : '無' },
+                  { label: '管理費', value: property.features.managementFee ? `${property.features.managementFee.toLocaleString()}元/月` : '無' },
                   { label: '押金',   value: property.features.deposit || '面議' },
                   { label: '最短租期', value: '一年' },
                   { label: '開伙',   value: '可' },
                   { label: '養寵物', value: property.amenities.includes('可養寵物') ? '可' : '不可' },
                   { label: '身分限制', value: '無' },
                 ].map(({ label, value }) => (
-                  <div key={label} className="flex justify-between py-1.5 border-b border-[#F2E9DF] last:border-0">
+                  <div key={label} className="flex justify-between py-1.5 border-b border-[#F2E9DF]">
                     <span className="text-[11px] text-[#9A7D6B]">{label}</span>
                     <span className="text-[11px] font-bold text-[#3D2B1F]">{value}</span>
                   </div>
@@ -540,32 +593,23 @@ export default function PropertyDetail() {
 
         {/* Similar Properties */}
         {similarProperties.length > 0 && (
-          <div className="mt-24">
-            <h2 className="text-3xl font-bold text-gray-900 mb-12">相似房源推薦</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="mt-10 sm:mt-16">
+            <h2 className="text-lg sm:text-2xl font-bold text-[#3D2B1F] mb-4">相似房源推薦</h2>
+            {/* 手機：橫向捲動；桌面：grid */}
+            <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 sm:grid sm:grid-cols-2 lg:grid-cols-4 sm:overflow-visible sm:pb-0">
               {similarProperties.map(prop => (
-                <Link 
-                  key={prop.id} 
-                  to={`/property/${prop.id}`}
-                  className="group bg-white rounded-[32px] overflow-hidden border border-gray-100 hover:shadow-2xl transition-all"
-                >
-                  <div className="aspect-video overflow-hidden">
-                    <img 
-                      src={prop.images[0]} 
-                      alt={prop.title} 
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                      referrerPolicy="no-referrer"
-                    />
-                  </div>
-                  <div className="p-6">
-                    <h3 className="font-bold text-gray-900 mb-2 group-hover:text-orange-600 transition-colors">{prop.title}</h3>
-                    <div className="flex items-center justify-between">
-                      <span className="text-orange-600 font-black">NT$ {prop.price.toLocaleString()}</span>
-                      <span className="text-xs text-gray-400">{prop.location.district}</span>
-                    </div>
-                  </div>
-                </Link>
+                <div key={prop.id} className="shrink-0 w-[200px] sm:w-auto">
+                  <PropertyCard property={prop} />
+                </div>
               ))}
+              {/* 看更多（預留，未來接演算法推薦） */}
+              <Link
+                to="/listings"
+                className="shrink-0 w-[200px] sm:w-auto flex flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-[#E5D5C5] bg-[#FBF7F3] text-sm font-bold text-[#7A5C48] hover:border-[#F5A623] hover:text-[#F5A623] transition-colors min-h-[200px]"
+              >
+                看更多相似房源
+                <ChevronRight className="w-5 h-5" />
+              </Link>
             </div>
           </div>
         )}
