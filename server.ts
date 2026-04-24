@@ -699,30 +699,43 @@ app.get('/api/users/:id', apiLimiter, async (req, res) => {
   res.json(data);
 });
 
-// 發送訊息：用 service key 繞過 RLS，前端 anon key 無法直接 insert
+// 發送訊息：支援登入用戶 & 未登入訪客（需提供姓名+電話）
 app.post('/api/messages', writeLimiter, async (req: any, res: any) => {
   const token = req.headers['authorization']?.replace('Bearer ', '');
-  if (!token) return res.status(401).json({ error: '請先登入' });
+  const { receiver_id, property_id, property_title, content, guest_name, guest_phone } = req.body;
 
-  const authUser = await verifyToken(token);
-  if (!authUser) return res.status(401).json({ error: 'Token 無效' });
-
-  const { receiver_id, property_id, property_title, content } = req.body;
   if (!content?.trim() || !property_id) {
     return res.status(400).json({ error: '缺少必要欄位' });
   }
 
-  // 取 display_name，fallback 到 email 前綴
-  const { data: userRow } = await supabase.from('users').select('display_name').eq('id', authUser.id).single();
-  const senderName = userRow?.display_name || authUser.email.split('@')[0] || '';
+  let senderId = 'guest';
+  let senderName = '';
+  let senderPhone = '';
+
+  if (token) {
+    // 登入用戶
+    const authUser = await verifyToken(token);
+    if (!authUser) return res.status(401).json({ error: 'Token 無效' });
+    const { data: userRow } = await supabase.from('users').select('display_name').eq('id', authUser.id).single();
+    senderId = authUser.id;
+    senderName = userRow?.display_name || authUser.email?.split('@')[0] || '';
+  } else {
+    // 訪客：姓名與電話必填
+    if (!guest_name?.trim() || !guest_phone?.trim()) {
+      return res.status(400).json({ error: '請填寫姓名與電話' });
+    }
+    senderName = guest_name.trim().slice(0, 50);
+    senderPhone = guest_phone.trim().slice(0, 20);
+  }
 
   const { error } = await supabase.from('messages').insert({
-    sender_id: authUser.id,
+    sender_id: senderId,
     sender_name: senderName,
+    sender_phone: senderPhone,
     receiver_id: receiver_id || 'admin',
     property_id,
-    property_title,
-    content: content.trim(),
+    property_title: property_title || '',
+    content: content.trim().slice(0, 1000),
     is_read: false,
   });
 
@@ -730,6 +743,31 @@ app.post('/api/messages', writeLimiter, async (req: any, res: any) => {
     console.error('messages insert error:', error);
     return res.status(500).json({ error: error.message });
   }
+
+  // LINE 通知仲介（若仲介有綁定 line_user_id）
+  if (receiver_id && receiver_id !== 'guest' && receiver_id !== 'admin') {
+    const { data: ownerRow } = await supabase
+      .from('users')
+      .select('line_user_id, display_name')
+      .eq('id', receiver_id)
+      .single();
+
+    if (ownerRow?.line_user_id) {
+      const lineMsg = `🏠 新詢問通知\n\n房源：${property_title || ''}\n詢問者：${senderName}${senderPhone ? `（${senderPhone}）` : ''}\n\n${content.trim().slice(0, 200)}`;
+      try {
+        await lineClient.pushMessage({
+          to: ownerRow.line_user_id,
+          messages: [{ type: 'text', text: lineMsg }],
+        });
+      } catch (e) {
+        console.error('LINE 通知失敗:', e);
+      }
+    }
+  }
+
+  // 同時通知管理員
+  await notifyAdmin(`🏠 新詢問\n${property_title}\n來自：${senderName}${senderPhone ? `（${senderPhone}）` : ''}\n${content.trim().slice(0, 100)}`, `inquiry-${property_id}`);
+
   res.json({ ok: true });
 });
 

@@ -27,6 +27,8 @@ export default function PropertyDetail() {
   const [isBooking, setIsBooking] = useState(false);
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [messageContent, setMessageContent] = useState('');
+  const [guestName, setGuestName] = useState('');
+  const [guestPhone, setGuestPhone] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [similarProperties, setSimilarProperties] = useState<Property[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
@@ -158,32 +160,39 @@ export default function PropertyDetail() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) { toast('請先登入以發送訊息', 'info'); return; }
     if (!property) return;
+
+    // 訪客需填姓名與電話
+    if (!user && (!guestName.trim() || !guestPhone.trim())) {
+      toast('請填寫姓名與聯絡電話', 'info');
+      return;
+    }
 
     setIsSending(true);
     try {
-      // 取 JWT token 送給後端（service role key 繞過 RLS）
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('no session');
+
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
 
       const res = await fetch(`${API_BASE}/api/messages`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
+        headers,
         body: JSON.stringify({
           receiver_id: property.owner.uid || 'admin',
           property_id: property.id,
           property_title: property.title,
           content: messageContent,
+          guest_name: guestName,
+          guest_phone: guestPhone,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
-      toast('訊息已發送！', 'success');
+      toast('訊息已發送！仲介將盡快與您聯繫。', 'success');
       setShowMessageModal(false);
       setMessageContent('');
+      setGuestName('');
+      setGuestPhone('');
     } catch (error: any) {
       console.error('Message error:', error);
       toast(`發送失敗：${error?.message || '請稍後再試'}`, 'error');
@@ -732,34 +741,54 @@ export default function PropertyDetail() {
               <XCircle className="w-5 h-5" />
             </button>
             
-            <h3 className="text-2xl font-bold text-gray-900 mb-2">發送訊息</h3>
-            <p className="text-gray-500 mb-8">詢問屋主關於這間房源的更多細節。</p>
+            <h3 className="text-2xl font-bold text-gray-900 mb-2">聯繫仲介</h3>
+            <p className="text-gray-500 mb-6">對這間房源有興趣？留下訊息，仲介會盡快與您聯繫。</p>
 
-            <form onSubmit={handleSendMessage} className="space-y-6">
+            <form onSubmit={handleSendMessage} className="space-y-4">
+              {/* 訪客才顯示姓名/電話 */}
+              {!user && (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">姓名 *</label>
+                    <input
+                      required
+                      type="text"
+                      placeholder="您的姓名"
+                      value={guestName}
+                      onChange={e => setGuestName(e.target.value)}
+                      className="w-full px-5 py-3 bg-gray-50 rounded-2xl outline-none focus:ring-2 focus:ring-orange-500 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">聯絡電話 *</label>
+                    <input
+                      required
+                      type="tel"
+                      placeholder="0912-345-678"
+                      value={guestPhone}
+                      onChange={e => setGuestPhone(e.target.value)}
+                      className="w-full px-5 py-3 bg-gray-50 rounded-2xl outline-none focus:ring-2 focus:ring-orange-500 text-sm"
+                    />
+                  </div>
+                </>
+              )}
               <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">訊息內容</label>
-                <textarea 
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">訊息內容 *</label>
+                <textarea
                   required
                   rows={4}
                   placeholder="例如：請問什麼時候方便看房？"
                   value={messageContent}
-                  onChange={(e) => setMessageContent(e.target.value)}
-                  className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium resize-none"
+                  onChange={e => setMessageContent(e.target.value)}
+                  className="w-full px-5 py-3 bg-gray-50 rounded-2xl outline-none focus:ring-2 focus:ring-orange-500 text-sm resize-none"
                 />
               </div>
-              <button 
+              <button
                 type="submit"
                 disabled={isSending}
                 className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold hover:bg-gray-800 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {isSending ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    傳送中...
-                  </>
-                ) : (
-                  "確認傳送"
-                )}
+                {isSending ? <><Loader2 className="w-5 h-5 animate-spin" />傳送中...</> : '送出詢問'}
               </button>
             </form>
           </div>

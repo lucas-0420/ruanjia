@@ -5,7 +5,8 @@ import { useFirebase, mapPropertyFromDB } from '../context/SupabaseContext';
 import { supabase } from '../supabase';
 import {
   Building2, Plus, Edit, Trash2, TrendingUp,
-  Home, CheckCircle, Archive, Loader2, LayoutDashboard, LogOut, Search, X
+  Home, CheckCircle, Archive, Loader2, LayoutDashboard, LogOut, Search, X,
+  MessageSquare, Phone, Clock
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Property } from '../types';
@@ -16,6 +17,17 @@ interface ConfirmModal {
   nextStatus: 'active' | 'archived';
 }
 
+interface Inquiry {
+  id: string;
+  sender_name: string;
+  sender_phone: string;
+  property_id: string;
+  property_title: string;
+  content: string;
+  is_read: boolean;
+  created_at: string;
+}
+
 export default function AgentDashboard() {
   const { user, userRole, isAuthReady, logout } = useFirebase();
   const [properties, setProperties] = useState<Property[]>([]);
@@ -24,6 +36,10 @@ export default function AgentDashboard() {
   const [confirm, setConfirm] = useState<ConfirmModal | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'archived'>('all');
   const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<'properties' | 'inquiries'>('properties');
+  const [inquiries, setInquiries] = useState<Inquiry[]>([]);
+  const [inquiryLoading, setInquiryLoading] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const canAccess = userRole === 'agent' || userRole === 'admin';
 
@@ -40,6 +56,31 @@ export default function AgentDashboard() {
         setLoading(false);
       });
   }, [user, canAccess]);
+
+  // ── 載入詢問紀錄 ──
+  useEffect(() => {
+    if (!user || !canAccess) return;
+    setInquiryLoading(true);
+    supabase
+      .from('messages')
+      .select('*')
+      .eq('receiver_id', user.id)
+      .order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (!error && data) {
+          setInquiries(data as Inquiry[]);
+          setUnreadCount(data.filter((m: Inquiry) => !m.is_read).length);
+        }
+        setInquiryLoading(false);
+      });
+  }, [user, canAccess, activeTab]);
+
+  // ── 標記已讀 ──
+  const markRead = async (id: string) => {
+    await supabase.from('messages').update({ is_read: true }).eq('id', id);
+    setInquiries(prev => prev.map(m => m.id === id ? { ...m, is_read: true } : m));
+    setUnreadCount(prev => Math.max(0, prev - 1));
+  };
 
   if (isAuthReady && (!user || !canAccess)) return <Navigate to="/" />;
 
@@ -159,13 +200,35 @@ export default function AgentDashboard() {
           {/* 標題列 */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-black text-[#3D2B1F]">我的房源</h1>
-              <span className="text-xs font-bold text-[#9A7D6B] bg-[#F2E9DF] px-2 py-0.5 rounded-full">{filtered.length}</span>
+              <h1 className="text-xl font-black text-[#3D2B1F]">
+                {activeTab === 'properties' ? '我的房源' : '詢問收件匣'}
+              </h1>
+              {activeTab === 'properties' && (
+                <span className="text-xs font-bold text-[#9A7D6B] bg-[#F2E9DF] px-2 py-0.5 rounded-full">{filtered.length}</span>
+              )}
             </div>
-            <Link to="/post" className="flex items-center gap-1.5 bg-[#FFB830] text-[#3D2B1F] px-3 py-2 rounded-xl text-sm font-bold">
-              <Plus className="w-4 h-4" />
-              刊登
-            </Link>
+            {activeTab === 'properties' && (
+              <Link to="/post" className="flex items-center gap-1.5 bg-[#FFB830] text-[#3D2B1F] px-3 py-2 rounded-xl text-sm font-bold">
+                <Plus className="w-4 h-4" />
+                刊登
+              </Link>
+            )}
+          </div>
+          {/* 主 Tab：房源 / 詢問 */}
+          <div className="flex gap-2">
+            <button onClick={() => setActiveTab('properties')}
+              className={cn('flex-1 py-2 rounded-xl text-xs font-bold transition-colors border flex items-center justify-center gap-1',
+                activeTab === 'properties' ? 'bg-[#FFE8CC] text-[#F5A623] border-[#FFE8CC]' : 'bg-white text-[#9A7D6B] border-[#E5D5C5]')}>
+              <Building2 className="w-3.5 h-3.5" /> 房源
+            </button>
+            <button onClick={() => setActiveTab('inquiries')}
+              className={cn('flex-1 py-2 rounded-xl text-xs font-bold transition-colors border flex items-center justify-center gap-1.5',
+                activeTab === 'inquiries' ? 'bg-[#FFE8CC] text-[#F5A623] border-[#FFE8CC]' : 'bg-white text-[#9A7D6B] border-[#E5D5C5]')}>
+              <MessageSquare className="w-3.5 h-3.5" /> 詢問
+              {unreadCount > 0 && (
+                <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[9px] flex items-center justify-center font-bold">{unreadCount}</span>
+              )}
+            </button>
           </div>
           {/* 搜尋欄 */}
           <div className="relative">
@@ -188,14 +251,56 @@ export default function AgentDashboard() {
 
         {/* 可捲動列表 */}
         <div className="flex-1 overflow-y-auto bg-white">
-          {loading ? (
-            <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-[#F5A623]" /></div>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 px-8 text-center">
-              <Building2 className="w-10 h-10 text-[#E5D5C5] mb-3" />
-              <p className="font-bold text-[#9A7D6B]">沒有符合的房源</p>
-            </div>
-          ) : filtered.map(renderRow)}
+          {activeTab === 'properties' ? (
+            loading ? (
+              <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-[#F5A623]" /></div>
+            ) : filtered.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 px-8 text-center">
+                <Building2 className="w-10 h-10 text-[#E5D5C5] mb-3" />
+                <p className="font-bold text-[#9A7D6B]">沒有符合的房源</p>
+              </div>
+            ) : filtered.map(renderRow)
+          ) : (
+            /* 詢問收件匣 */
+            inquiryLoading ? (
+              <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-[#F5A623]" /></div>
+            ) : inquiries.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 px-8 text-center">
+                <MessageSquare className="w-10 h-10 text-[#E5D5C5] mb-3" />
+                <p className="font-bold text-[#9A7D6B]">還沒有詢問</p>
+                <p className="text-xs text-[#B8A090] mt-1">當租客送出詢問，會在這裡顯示</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-[#F2E9DF]">
+                {inquiries.map(inq => (
+                  <div
+                    key={inq.id}
+                    onClick={() => !inq.is_read && markRead(inq.id)}
+                    className={cn('px-4 py-4 cursor-pointer transition-colors', !inq.is_read ? 'bg-[#FFFBF5]' : 'bg-white')}
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <div className="flex items-center gap-2">
+                        {!inq.is_read && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0 mt-1" />}
+                        <span className="text-sm font-bold text-[#3D2B1F]">{inq.sender_name || '訪客'}</span>
+                        {inq.sender_phone && (
+                          <a href={`tel:${inq.sender_phone}`} onClick={e => e.stopPropagation()}
+                            className="flex items-center gap-1 text-xs text-[#F5A623] font-bold">
+                            <Phone className="w-3 h-3" />{inq.sender_phone}
+                          </a>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-[#B8A090] shrink-0 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {new Date(inq.created_at).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#9A7D6B] mb-1 truncate">📍 {inq.property_title}</p>
+                    <p className="text-sm text-[#3D2B1F] leading-relaxed line-clamp-2">{inq.content}</p>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
         </div>
       </div>
 
@@ -272,61 +377,100 @@ export default function AgentDashboard() {
         {/* ── Main Content ── */}
         <div className="flex-1 min-w-0 space-y-6">
 
-          {/* Desktop Header */}
+          {/* Desktop Tab 切換 */}
           <div className="hidden lg:flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <TrendingUp className="w-5 h-5 text-orange-600" />
-              <h2 className="font-bold text-gray-900">
-                {filter === 'active' ? '上架中房源' : filter === 'archived' ? '已下架房源' : '我的房源列表'}
-              </h2>
-              <span className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{filtered.length}</span>
-              {filter !== 'all' && (
-                <button onClick={() => setFilter('all')} className="text-xs text-orange-600 hover:underline font-medium">清除篩選</button>
-              )}
+            <div className="flex items-center gap-2">
+              <button onClick={() => setActiveTab('properties')}
+                className={cn('flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-bold transition-colors',
+                  activeTab === 'properties' ? 'bg-orange-50 text-orange-600' : 'text-gray-500 hover:bg-gray-50')}>
+                <Building2 className="w-4 h-4" /> 房源管理
+              </button>
+              <button onClick={() => setActiveTab('inquiries')}
+                className={cn('flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-bold transition-colors',
+                  activeTab === 'inquiries' ? 'bg-orange-50 text-orange-600' : 'text-gray-500 hover:bg-gray-50')}>
+                <MessageSquare className="w-4 h-4" /> 詢問收件匣
+                {unreadCount > 0 && (
+                  <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-bold">{unreadCount}</span>
+                )}
+              </button>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder="搜尋房源..."
-                  className="pl-9 pr-8 py-2 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:border-orange-400 w-48"
-                />
-                {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X className="w-3.5 h-3.5" /></button>}
-              </div>
-              <Link
-                to="/post"
-                className="flex items-center gap-2 bg-orange-600 text-white px-5 py-2.5 rounded-2xl text-sm font-bold hover:bg-orange-700 transition-all shadow-lg shadow-orange-100"
-              >
-                <Plus className="w-4 h-4" />
-                刊登新房源
-              </Link>
-            </div>
-          </div>
-
-          {/* Property List */}
-          <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-            {loading ? (
-              <div className="flex items-center justify-center py-20">
-                <Loader2 className="w-8 h-8 animate-spin text-[#F5A623]" />
-              </div>
-            ) : properties.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center px-8">
-                <Building2 className="w-10 h-10 text-[#E5D5C5] mb-4" />
-                <p className="font-bold text-[#9A7D6B] mb-2">尚無房源</p>
-                <Link to="/post" className="flex items-center gap-2 bg-[#FFB830] text-[#3D2B1F] px-6 py-3 rounded-2xl font-bold mt-4">
-                  <Plus className="w-4 h-4" />立即刊登
+            {activeTab === 'properties' && (
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="搜尋房源..."
+                    className="pl-9 pr-8 py-2 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:border-orange-400 w-48" />
+                  {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X className="w-3.5 h-3.5" /></button>}
+                </div>
+                <Link to="/post" className="flex items-center gap-2 bg-orange-600 text-white px-5 py-2.5 rounded-2xl text-sm font-bold hover:bg-orange-700 transition-all shadow-lg shadow-orange-100">
+                  <Plus className="w-4 h-4" /> 刊登新房源
                 </Link>
               </div>
-            ) : filtered.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <p className="font-bold text-[#9A7D6B]">此分類沒有房源</p>
-                <button onClick={() => setFilter('all')} className="text-sm text-[#F5A623] mt-2">顯示全部</button>
-              </div>
-            ) : filtered.map(renderRow)}
+            )}
           </div>
+
+          {/* 房源列表 or 詢問收件匣 */}
+          {activeTab === 'properties' ? (
+            <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+              {loading ? (
+                <div className="flex items-center justify-center py-20">
+                  <Loader2 className="w-8 h-8 animate-spin text-[#F5A623]" />
+                </div>
+              ) : properties.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center px-8">
+                  <Building2 className="w-10 h-10 text-[#E5D5C5] mb-4" />
+                  <p className="font-bold text-[#9A7D6B] mb-2">尚無房源</p>
+                  <Link to="/post" className="flex items-center gap-2 bg-[#FFB830] text-[#3D2B1F] px-6 py-3 rounded-2xl font-bold mt-4">
+                    <Plus className="w-4 h-4" />立即刊登
+                  </Link>
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <p className="font-bold text-[#9A7D6B]">此分類沒有房源</p>
+                  <button onClick={() => setFilter('all')} className="text-sm text-[#F5A623] mt-2">顯示全部</button>
+                </div>
+              ) : filtered.map(renderRow)}
+            </div>
+          ) : (
+            /* 桌面版詢問列表 */
+            <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+              {inquiryLoading ? (
+                <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-[#F5A623]" /></div>
+              ) : inquiries.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                  <MessageSquare className="w-10 h-10 text-[#E5D5C5] mb-4" />
+                  <p className="font-bold text-[#9A7D6B]">還沒有詢問</p>
+                  <p className="text-sm text-[#B8A090] mt-1">當租客送出詢問，會在這裡顯示</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-50">
+                  {inquiries.map(inq => (
+                    <div key={inq.id} onClick={() => !inq.is_read && markRead(inq.id)}
+                      className={cn('px-6 py-5 cursor-pointer hover:bg-gray-50 transition-colors', !inq.is_read && 'bg-orange-50/40')}>
+                      <div className="flex items-start justify-between gap-4 mb-2">
+                        <div className="flex items-center gap-3">
+                          {!inq.is_read && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0 mt-1" />}
+                          <span className="font-bold text-gray-900">{inq.sender_name || '訪客'}</span>
+                          {inq.sender_phone && (
+                            <a href={`tel:${inq.sender_phone}`} onClick={e => e.stopPropagation()}
+                              className="flex items-center gap-1 text-sm text-orange-600 font-bold hover:underline">
+                              <Phone className="w-3.5 h-3.5" />{inq.sender_phone}
+                            </a>
+                          )}
+                        </div>
+                        <span className="text-xs text-gray-400 shrink-0 flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {new Date(inq.created_at).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-400 mb-1.5">📍 {inq.property_title}</p>
+                      <p className="text-sm text-gray-700 leading-relaxed">{inq.content}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
