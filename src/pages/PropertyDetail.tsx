@@ -83,18 +83,7 @@ export default function PropertyDetail() {
           setSimilarProperties(similarRes.data.map(mapPropertyFromDB));
         }
 
-        // 背景：geocode 補真實座標（不阻塞頁面）
-        if (GOOGLE_MAPS_API_KEY) {
-          const addr = encodeURIComponent(`${propData.location.city}${propData.location.district}${propData.location.address}台灣`);
-          try {
-            const geo = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${addr}&key=${GOOGLE_MAPS_API_KEY}`);
-            const geoJson = await geo.json();
-            const loc = geoJson.results?.[0]?.geometry?.location;
-            if (loc) {
-              setProperty(prev => prev ? { ...prev, location: { ...prev.location, lat: loc.lat, lng: loc.lng } } : prev);
-            }
-          } catch (_) {}
-        }
+        // geocode 已在上架時存入 DB，詳細頁直接用 DB 座標，不重複呼叫
       } catch (error) {
         console.error('fetchProperty error:', error);
         setLoading(false);
