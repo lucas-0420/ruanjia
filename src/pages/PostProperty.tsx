@@ -1060,14 +1060,21 @@ export default function PostProperty() {
                   <div className="flex items-center gap-4 p-6 bg-green-50 rounded-3xl border-2 border-green-100">
                     <ShieldCheck className="w-8 h-8 text-green-600 shrink-0" />
                     <div>
-                      <p className="font-bold text-green-900">免仲介費刊登</p>
-                      <p className="text-sm text-green-700">勾選此項將在房源列表顯示「屋主直租」標章，吸引更多租客。</p>
+                      <p className="font-bold text-green-900">
+                        {userRole === 'landlord' ? '屋主直租' : '免服務費刊登'}
+                      </p>
+                      <p className="text-sm text-green-700">
+                        {userRole === 'landlord'
+                          ? '您以屋主身份刊登，將自動顯示「屋主直租」標章，吸引更多租客。'
+                          : '勾選此項將在房源列表顯示「免服務費」標章，吸引更多租客。'}
+                      </p>
                     </div>
-                    <input 
+                    <input
                       type="checkbox"
-                      checked={formData.isZeroFee}
-                      onChange={(e) => setFormData({...formData, isZeroFee: e.target.checked})}
-                      className="w-6 h-6 rounded-lg border-green-200 text-green-600 focus:ring-green-600 ml-auto"
+                      checked={userRole === 'landlord' ? true : formData.isZeroFee}
+                      onChange={(e) => { if (userRole !== 'landlord') setFormData({...formData, isZeroFee: e.target.checked}); }}
+                      disabled={userRole === 'landlord'}
+                      className="w-6 h-6 rounded-lg border-green-200 text-green-600 focus:ring-green-600 ml-auto disabled:opacity-60"
                     />
                   </div>
                 </div>
