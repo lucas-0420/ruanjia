@@ -295,7 +295,7 @@ export default function AgentDashboard() {
 
         {/* 可捲動列表 */}
         <div className="flex-1 overflow-y-auto bg-white">
-          {activeTab === 'properties' ? (
+          {activeTab === 'properties' && (
             loading ? (
               <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-[#F5A623]" /></div>
             ) : filtered.length === 0 ? (
@@ -304,8 +304,8 @@ export default function AgentDashboard() {
                 <p className="font-bold text-[#9A7D6B]">沒有符合的房源</p>
               </div>
             ) : filtered.map(renderRow)
-          ) : (
-            /* 詢問收件匣 */
+          )}
+          {activeTab === 'inquiries' && (
             inquiryLoading ? (
               <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-[#F5A623]" /></div>
             ) : inquiries.length === 0 ? (
@@ -317,11 +317,8 @@ export default function AgentDashboard() {
             ) : (
               <div className="divide-y divide-[#F2E9DF]">
                 {inquiries.map(inq => (
-                  <div
-                    key={inq.id}
-                    onClick={() => !inq.is_read && markRead(inq.id)}
-                    className={cn('px-4 py-4 cursor-pointer transition-colors', !inq.is_read ? 'bg-[#FFFBF5]' : 'bg-white')}
-                  >
+                  <div key={inq.id} onClick={() => !inq.is_read && markRead(inq.id)}
+                    className={cn('px-4 py-4 cursor-pointer transition-colors', !inq.is_read ? 'bg-[#FFFBF5]' : 'bg-white')}>
                     <div className="flex items-start justify-between gap-2 mb-1">
                       <div className="flex items-center gap-2">
                         {!inq.is_read && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0 mt-1" />}
@@ -344,8 +341,8 @@ export default function AgentDashboard() {
                 ))}
               </div>
             )
-          ) : (
-            /* 手機版預約行事曆 */
+          )}
+          {activeTab === 'bookings' && (
             bookingLoading ? (
               <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-[#F5A623]" /></div>
             ) : (
@@ -467,8 +464,8 @@ export default function AgentDashboard() {
             )}
           </div>
 
-          {/* 房源列表 or 詢問收件匣 */}
-          {activeTab === 'properties' ? (
+          {/* 桌面版：房源列表 */}
+          {activeTab === 'properties' && (
             <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
               {loading ? (
                 <div className="flex items-center justify-center py-20">
@@ -489,8 +486,9 @@ export default function AgentDashboard() {
                 </div>
               ) : filtered.map(renderRow)}
             </div>
-          ) : (
-            /* 桌面版詢問列表 */
+          )}
+          {/* 桌面版：詢問收件匣 */}
+          {activeTab === 'inquiries' && (
             <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
               {inquiryLoading ? (
                 <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-[#F5A623]" /></div>
@@ -528,8 +526,9 @@ export default function AgentDashboard() {
                 </div>
               )}
             </div>
-          ) : (
-            /* 桌面版預約行事曆 */
+          )}
+          {/* 桌面版：預約行事曆 */}
+          {activeTab === 'bookings' && (
             bookingLoading ? (
               <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-[#F5A623]" /></div>
             ) : (
