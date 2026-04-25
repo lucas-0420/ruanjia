@@ -80,7 +80,7 @@ export default function Navbar() {
     { label: '找房',   path: '/listings', icon: Search },
     ...(isAdmin         ? [{ label: '管理室', path: '/manage', icon: Users }] : []),
     { label: '收藏清單', path: '/favorites', icon: Heart },
-    ...(userRole === 'agent' ? [{ label: '會員中心', path: '/agent',  icon: Briefcase }] : []),
+    ...(userRole === 'agent' || userRole === 'landlord' ? [{ label: '會員中心', path: '/agent',  icon: Briefcase }] : []),
     ...(isAdmin         ? [{ label: '會員中心', path: '/admin',  icon: LayoutDashboard }] : []),
   ];
 
@@ -124,7 +124,7 @@ export default function Navbar() {
 
               {user ? (
                 <div className="flex items-center gap-4">
-                  {(userRole === 'agent' || userRole === 'admin') && (
+                  {(userRole === 'agent' || userRole === 'admin' || userRole === 'landlord') && (
                     <Link
                       to="/post"
                       className="bg-[#FFB830] text-[#3D2B1F] px-4 py-2 rounded-full text-sm font-bold hover:bg-[#F5A623] transition-colors shadow-sm"
@@ -174,7 +174,7 @@ export default function Navbar() {
 
             {/* 手機頂部右側：刊登 + 漢堡選單 */}
             <div className="md:hidden flex items-center gap-2">
-              {user && (userRole === 'agent' || userRole === 'admin') && (
+              {user && (userRole === 'agent' || userRole === 'admin' || userRole === 'landlord') && (
                 <Link to="/post" className="bg-[#FFB830] text-[#3D2B1F] px-3 py-1.5 rounded-xl text-sm font-bold">
                   刊登
                 </Link>
@@ -232,6 +232,7 @@ export default function Navbar() {
                 { label: '收藏',   path: '/favorites', icon: Heart },
                 ...(user ? [{ label: '訊息', path: '/messages', icon: MessageSquare }] : []),
                 ...(userRole === 'agent' ? [{ label: '仲介後台', path: '/agent', icon: Briefcase }] : []),
+                ...(userRole === 'landlord' ? [{ label: '屋主後台', path: '/agent', icon: Briefcase }] : []),
                 ...(isAdmin ? [{ label: '管理室', path: '/manage', icon: Users }] : []),
                 ...(isAdmin ? [{ label: '後台總覽', path: '/admin', icon: LayoutDashboard }] : []),
                 ...(user ? [{ label: '個人帳戶', path: '/profile', icon: User }] : []),

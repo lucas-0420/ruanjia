@@ -64,9 +64,9 @@ export default function PostProperty() {
     ownerLineId: '',
   });
 
-  // 非仲介/管理員導回首頁
+  // 非仲介/屋主/管理員導回首頁
   useEffect(() => {
-    if (isAuthReady && user && userRole !== 'agent' && userRole !== 'admin') {
+    if (isAuthReady && user && !['agent', 'admin', 'landlord'].includes(userRole)) {
       navigate('/');
     }
   }, [isAuthReady, user, userRole]);
@@ -408,7 +408,7 @@ export default function PostProperty() {
           lineId: formData.ownerLineId,
           avatar: (id && formData.owner?.avatar) || user.user_metadata?.avatar_url || '',
           uid: user.id,
-          role: (id && formData.owner?.role) || '屋主'
+          role: (id && formData.owner?.role) || (userRole === 'landlord' ? '屋主' : '仲介')
         },
         isZeroFee: formData.isZeroFee,
         createdAt: id && formData.createdAt ? formData.createdAt : new Date().toISOString(),

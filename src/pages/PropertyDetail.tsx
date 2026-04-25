@@ -433,9 +433,11 @@ export default function PropertyDetail() {
               {property.status === 'archived' && (
                 <span className="px-2.5 py-1 bg-[#3D2B1F]/80 text-white text-[10px] font-bold rounded-full">已下架</span>
               )}
-              {property.isZeroFee && (
+              {property.owner?.role === '屋主' || property.owner?.role === 'landlord' ? (
                 <span className="px-2.5 py-1 bg-[#F5A623] text-[#3D2B1F] text-[10px] font-bold rounded-full">屋主直租</span>
-              )}
+              ) : property.isZeroFee ? (
+                <span className="px-2.5 py-1 bg-emerald-500 text-white text-[10px] font-bold rounded-full">免服務費</span>
+              ) : null}
               <span className="px-2.5 py-1 bg-[#F2E9DF] text-[#7A5C48] text-[10px] font-bold rounded-full">
                 {property.type === 'apartment' ? '公寓' : property.type === 'house' ? '住宅' : property.type === 'studio' ? '套房' : '雅房'}
               </span>

@@ -41,7 +41,8 @@ export default function AgentDashboard() {
   const [inquiryLoading, setInquiryLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  const canAccess = userRole === 'agent' || userRole === 'admin';
+  const canAccess = userRole === 'agent' || userRole === 'admin' || userRole === 'landlord';
+  const isLandlord = userRole === 'landlord';
 
   useEffect(() => {
     if (!user || !canAccess) return;
@@ -67,7 +68,9 @@ export default function AgentDashboard() {
       .eq('receiver_id', user.id)
       .order('created_at', { ascending: false })
       .then(({ data, error }) => {
-        if (!error && data) {
+        if (error) {
+          console.error('inquiries fetch error:', error);
+        } else if (data) {
           setInquiries(data as Inquiry[]);
           setUnreadCount(data.filter((m: Inquiry) => !m.is_read).length);
         }
@@ -323,7 +326,9 @@ export default function AgentDashboard() {
                 </div>
               )}
               <p className="font-bold text-gray-900 text-sm leading-tight">{name}</p>
-              <span className="mt-1 text-xs font-bold text-orange-600 bg-orange-50 px-3 py-0.5 rounded-full">仲介</span>
+              <span className="mt-1 text-xs font-bold text-orange-600 bg-orange-50 px-3 py-0.5 rounded-full">
+                {isLandlord ? '屋主' : '仲介'}
+              </span>
             </div>
 
             {/* Stats */}

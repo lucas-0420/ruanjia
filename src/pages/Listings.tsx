@@ -300,9 +300,11 @@ export default function Listings() {
                     />
                     {/* badges */}
                     <div className="absolute top-2 left-2 flex flex-col gap-1 pointer-events-none">
-                      {p.isZeroFee && (
+                      {p.owner?.role === '屋主' || p.owner?.role === 'landlord' ? (
                         <span className="text-[9px] sm:text-[10px] font-bold bg-[#F5A623] text-[#3D2B1F] px-2 py-0.5 rounded-full shadow-sm">屋主直租</span>
-                      )}
+                      ) : p.isZeroFee ? (
+                        <span className="text-[9px] sm:text-[10px] font-bold bg-emerald-500 text-white px-2 py-0.5 rounded-full shadow-sm">免服務費</span>
+                      ) : null}
                       {p.status === 'archived' && (
                         <span className="text-[9px] sm:text-[10px] font-bold bg-[#3D2B1F]/80 text-white px-2 py-0.5 rounded-full">已下架</span>
                       )}

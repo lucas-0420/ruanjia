@@ -82,12 +82,17 @@ export default function PropertyCard({ property, isFavorite, onToggleFavorite, d
 
         {/* 桌面：保留完整 badge */}
         <div className="hidden sm:flex absolute top-4 left-4 flex-col gap-1.5">
-          {property.isZeroFee && (
+          {property.owner?.role === '屋主' || property.owner?.role === 'landlord' ? (
             <span className="flex items-center gap-1.5 px-3 py-1.5 bg-[#F5A623] text-[#3D2B1F] text-[10px] font-bold tracking-wider rounded-full shadow-sm">
               <ShieldCheck className="w-3 h-3" />
               屋主直租
             </span>
-          )}
+          ) : property.isZeroFee ? (
+            <span className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-white text-[10px] font-bold tracking-wider rounded-full shadow-sm">
+              <ShieldCheck className="w-3 h-3" />
+              免服務費
+            </span>
+          ) : null}
           <span className="px-3 py-1.5 bg-white/85 backdrop-blur-sm text-[#3D2B1F] text-[10px] font-bold tracking-wider rounded-full shadow-sm">
             {property.type === 'apartment' ? '公寓' : property.type === 'house' ? '住宅' : property.type === 'studio' ? '套房' : '雅房'}
           </span>
