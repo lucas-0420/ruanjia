@@ -45,54 +45,55 @@ export default function PropertyDetail() {
       try {
         const { data: row, error } = await supabase.from('properties').select('*').eq('id', id).single();
         if (error) { console.error(error); return; }
-        if (row) {
-          const { mapPropertyFromDB } = await import('../context/SupabaseContext');
-          const propData = mapPropertyFromDB(row);
+        if (!row) return;
 
-          // 取得真實屋主資訊（透過 server API 繞過 RLS）
-          if (row.owner_id) {
-            try {
-              const res = await fetch(`${API_BASE}/api/users/${row.owner_id}`);
-              if (res.ok) {
-                const ownerRow = await res.json();
-                propData.owner = {
-                  ...propData.owner,
-                  name: ownerRow.display_name || propData.owner.name || '屋主',
-                  avatar: ownerRow.photo_url || propData.owner.avatar || '',
-                  role: ownerRow.role === 'agent' ? '仲介' : ownerRow.role === 'admin' ? '管理員' : '屋主',
-                  uid: row.owner_id,
-                  phone: row.owner_phone || propData.owner.phone || '',
-                  lineId: row.owner_line_id || propData.owner.lineId || '',
-                };
-              }
-            } catch (_) {}
-          }
+        const { mapPropertyFromDB } = await import('../context/SupabaseContext');
+        const propData = mapPropertyFromDB(row);
 
-          // Geocode 地址取得真實座標
-          const apiKey = GOOGLE_MAPS_API_KEY;
-          if (apiKey) {
-            const addr = encodeURIComponent(
-              `${propData.location.city}${propData.location.district}${propData.location.address}台灣`
-            );
-            try {
-              const geo = await fetch(
-                `https://maps.googleapis.com/maps/api/geocode/json?address=${addr}&key=${apiKey}`
-              );
-              const geoJson = await geo.json();
-              const loc = geoJson.results?.[0]?.geometry?.location;
-              if (loc) {
-                propData.location = { ...propData.location, lat: loc.lat, lng: loc.lng };
-              }
-            } catch (_) { /* geocode 失敗不影響頁面 */ }
-          }
+        // 先渲染頁面，屋主資訊與 geocode 背景補齊
+        setProperty(propData);
+        setLoading(false);
 
-          setProperty(propData);
-          const { data: similar } = await supabase.from('properties').select('*').neq('status', 'archived').eq('city', propData.location.city).neq('id', id).limit(10);
-          setSimilarProperties((similar || []).map(mapPropertyFromDB));
+        // 背景：屋主資訊 + 相似房源 並行取得
+        const [ownerRes, similarRes] = await Promise.all([
+          row.owner_id ? fetch(`${API_BASE}/api/users/${row.owner_id}`).catch(() => null) : Promise.resolve(null),
+          supabase.from('properties').select('*').neq('status', 'archived').eq('city', row.city).neq('id', id).limit(10),
+        ]);
+
+        if (ownerRes?.ok) {
+          const ownerRow = await ownerRes.json();
+          setProperty(prev => prev ? {
+            ...prev,
+            owner: {
+              ...prev.owner,
+              name: ownerRow.display_name || prev.owner.name || '屋主',
+              avatar: ownerRow.photo_url || prev.owner.avatar || '',
+              role: ownerRow.role === 'agent' ? '仲介' : ownerRow.role === 'admin' ? '管理員' : '屋主',
+              uid: row.owner_id,
+              phone: row.owner_phone || prev.owner.phone || '',
+              lineId: row.owner_line_id || prev.owner.lineId || '',
+            },
+          } : prev);
+        }
+
+        if (similarRes.data) {
+          setSimilarProperties(similarRes.data.map(mapPropertyFromDB));
+        }
+
+        // 背景：geocode 補真實座標（不阻塞頁面）
+        if (GOOGLE_MAPS_API_KEY) {
+          const addr = encodeURIComponent(`${propData.location.city}${propData.location.district}${propData.location.address}台灣`);
+          try {
+            const geo = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${addr}&key=${GOOGLE_MAPS_API_KEY}`);
+            const geoJson = await geo.json();
+            const loc = geoJson.results?.[0]?.geometry?.location;
+            if (loc) {
+              setProperty(prev => prev ? { ...prev, location: { ...prev.location, lat: loc.lat, lng: loc.lng } } : prev);
+            }
+          } catch (_) {}
         }
       } catch (error) {
         console.error('fetchProperty error:', error);
-      } finally {
         setLoading(false);
       }
     }
