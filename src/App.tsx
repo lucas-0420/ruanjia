@@ -12,7 +12,6 @@ import AgentDashboard from './pages/AgentDashboard';
 import PostProperty from './pages/PostProperty';
 import Profile from './pages/Profile';
 import Messages from './pages/Messages';
-import ConfigStatusBanner from './components/ConfigStatusBanner';
 import { ToastContainer } from './components/Toast';
 import { motion, AnimatePresence } from 'motion/react';
 import { SupabaseProvider } from './context/SupabaseContext';
@@ -70,7 +69,6 @@ export default function App() {
         <ScrollToTop />
         <div className="min-h-screen bg-[#FBF7F3] font-sans selection:bg-[#FFE8CC] selection:text-[#3D2B1F]">
           <Navbar />
-          <ConfigStatusBanner />
           <ToastContainer />
 
           {/* 主要內容：手機版底部留白以避免被底部導覽列遮住 */}
