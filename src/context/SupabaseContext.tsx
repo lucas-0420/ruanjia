@@ -83,8 +83,8 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
       const mapped = (data || []).map(mapPropertyFromDB);
       setProperties(mapped);
 
-      // 若資料庫是空的，塞入測試資料
-      if (mapped.length === 0 && user) {
+      // 若資料庫是空的，且在開發環境，塞入測試資料
+      if (mapped.length === 0 && user && import.meta.env.DEV) {
         await migrateMockData();
       }
     };

@@ -140,7 +140,6 @@ export default function PropertyDetail() {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          receiver_id: property.owner.uid || 'admin',
           property_id: property.id,
           property_title: property.title,
           date: bookingDate,
@@ -185,7 +184,6 @@ export default function PropertyDetail() {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          receiver_id: property.owner.uid || 'admin',
           property_id: property.id,
           property_title: property.title,
           content: messageContent,
