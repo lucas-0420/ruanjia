@@ -182,7 +182,7 @@ export function mapPropertyFromDB(row: any): Property {
     amenities: row.amenities || [],
     images: row.images || [],
     description: row.description || '',
-    owner: { name: row.owner_name, phone: row.owner_phone, avatar: row.owner_avatar, role: row.owner_role, lineId: row.owner_line_id || '' },
+    owner: { name: row.owner_name, phone: row.owner_phone, avatar: row.owner_avatar, role: row.owner_role, lineId: row.owner_line_id || '', uid: row.owner_id || '' },
     isZeroFee: row.is_zero_fee,
     createdAt: row.created_at,
     tags: row.tags || [],

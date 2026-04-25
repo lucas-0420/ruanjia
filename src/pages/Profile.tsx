@@ -19,7 +19,8 @@ export default function Profile() {
   const [searchParams, setSearchParams] = useSearchParams();
   const isAdmin = userRole === 'admin';
   const isAgent = userRole === 'agent';
-  const canBindLine = isAdmin || isAgent;
+  const isLandlord = userRole === 'landlord';
+  const canBindLine = isAdmin || isAgent || isLandlord;
 
   // 載入現有 LINE 綁定狀態
   useEffect(() => {
@@ -118,7 +119,7 @@ export default function Profile() {
               )}
               <p className="font-bold text-gray-900 text-sm leading-tight">{name}</p>
               <span className="mt-1 text-xs font-bold text-orange-600 bg-orange-50 px-3 py-0.5 rounded-full">
-                {isAdmin ? '管理員' : '租客'}
+                {isAdmin ? '管理員' : isAgent ? '仲介' : isLandlord ? '屋主' : '租客'}
               </span>
             </div>
 
