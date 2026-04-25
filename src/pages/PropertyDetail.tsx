@@ -68,7 +68,7 @@ export default function PropertyDetail() {
               ...prev.owner,
               name: ownerRow.display_name || prev.owner.name || '屋主',
               avatar: ownerRow.photo_url || prev.owner.avatar || '',
-              role: ownerRow.role === 'agent' ? '仲介' : ownerRow.role === 'admin' ? '管理員' : '屋主',
+              role: ownerRow.role === 'agent' ? '仲介' : ownerRow.role === 'landlord' ? '屋主' : ownerRow.role === 'admin' ? '管理員' : (prev?.owner.role || '屋主'),
               uid: row.owner_id,
               phone: row.owner_phone || prev.owner.phone || '',
               lineId: row.owner_line_id || prev.owner.lineId || '',
