@@ -100,7 +100,7 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [user]);
+  }, []); // 不依賴 user，頁面一開就立刻載入房源
 
   // ── LINE Messages (Realtime) ──────────────────────
   useEffect(() => {
