@@ -6,7 +6,7 @@ import { supabase } from '../supabase';
 import {
   Building2, Plus, Edit, Trash2, TrendingUp,
   Home, CheckCircle, Archive, Loader2, LayoutDashboard, LogOut, Search, X,
-  MessageSquare, Phone, Clock
+  MessageSquare, Phone, Clock, Calendar, ChevronLeft, ChevronRight as ChevronRightIcon
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Property } from '../types';
@@ -28,6 +28,18 @@ interface Inquiry {
   created_at: string;
 }
 
+interface Booking {
+  id: string;
+  user_name: string;
+  user_phone: string;
+  property_id: string;
+  property_title: string;
+  date: string;
+  time: string;
+  status: 'pending' | 'confirmed' | 'cancelled';
+  created_at: string;
+}
+
 export default function AgentDashboard() {
   const { user, userRole, isAuthReady, logout } = useFirebase();
   const [properties, setProperties] = useState<Property[]>([]);
@@ -36,10 +48,13 @@ export default function AgentDashboard() {
   const [confirm, setConfirm] = useState<ConfirmModal | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'archived'>('all');
   const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState<'properties' | 'inquiries'>('properties');
+  const [activeTab, setActiveTab] = useState<'properties' | 'inquiries' | 'bookings'>('properties');
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [inquiryLoading, setInquiryLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [bookingLoading, setBookingLoading] = useState(false);
+  const [calendarDate, setCalendarDate] = useState(new Date());
 
   const canAccess = userRole === 'agent' || userRole === 'admin' || userRole === 'landlord';
   const isLandlord = userRole === 'landlord';
@@ -83,6 +98,27 @@ export default function AgentDashboard() {
     await supabase.from('messages').update({ is_read: true }).eq('id', id);
     setInquiries(prev => prev.map(m => m.id === id ? { ...m, is_read: true } : m));
     setUnreadCount(prev => Math.max(0, prev - 1));
+  };
+
+  // ── 載入預約 ──
+  useEffect(() => {
+    if (!user || !canAccess) return;
+    setBookingLoading(true);
+    supabase
+      .from('bookings')
+      .select('*')
+      .eq('receiver_id', user.id)
+      .order('date', { ascending: true })
+      .then(({ data, error }) => {
+        if (!error && data) setBookings(data as Booking[]);
+        setBookingLoading(false);
+      });
+  }, [user, canAccess, activeTab]);
+
+  // ── 更新預約狀態 ──
+  const updateBookingStatus = async (id: string, status: 'confirmed' | 'cancelled') => {
+    await supabase.from('bookings').update({ status }).eq('id', id);
+    setBookings(prev => prev.map(b => b.id === id ? { ...b, status } : b));
   };
 
   if (isAuthReady && (!user || !canAccess)) return <Navigate to="/" />;
@@ -232,6 +268,11 @@ export default function AgentDashboard() {
                 <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[9px] flex items-center justify-center font-bold">{unreadCount}</span>
               )}
             </button>
+            <button onClick={() => setActiveTab('bookings')}
+              className={cn('flex-1 py-2 rounded-xl text-xs font-bold transition-colors border flex items-center justify-center gap-1',
+                activeTab === 'bookings' ? 'bg-[#FFE8CC] text-[#F5A623] border-[#FFE8CC]' : 'bg-white text-[#9A7D6B] border-[#E5D5C5]')}>
+              <Calendar className="w-3.5 h-3.5" /> 預約
+            </button>
           </div>
           {/* 搜尋欄 */}
           <div className="relative">
@@ -302,6 +343,13 @@ export default function AgentDashboard() {
                   </div>
                 ))}
               </div>
+            )
+          ) : (
+            /* 手機版預約行事曆 */
+            bookingLoading ? (
+              <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-[#F5A623]" /></div>
+            ) : (
+              <BookingCalendar bookings={bookings} calendarDate={calendarDate} setCalendarDate={setCalendarDate} onUpdateStatus={updateBookingStatus} mobile />
             )
           )}
         </div>
@@ -398,6 +446,11 @@ export default function AgentDashboard() {
                   <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-bold">{unreadCount}</span>
                 )}
               </button>
+              <button onClick={() => setActiveTab('bookings')}
+                className={cn('flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-bold transition-colors',
+                  activeTab === 'bookings' ? 'bg-orange-50 text-orange-600' : 'text-gray-500 hover:bg-gray-50')}>
+                <Calendar className="w-4 h-4" /> 預約行事曆
+              </button>
             </div>
             {activeTab === 'properties' && (
               <div className="flex items-center gap-3">
@@ -475,9 +528,127 @@ export default function AgentDashboard() {
                 </div>
               )}
             </div>
+          ) : (
+            /* 桌面版預約行事曆 */
+            bookingLoading ? (
+              <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-[#F5A623]" /></div>
+            ) : (
+              <BookingCalendar bookings={bookings} calendarDate={calendarDate} setCalendarDate={setCalendarDate} onUpdateStatus={updateBookingStatus} />
+            )
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ── 預約行事曆元件 ── */
+function BookingCalendar({ bookings, calendarDate, setCalendarDate, onUpdateStatus, mobile = false }: {
+  bookings: Booking[];
+  calendarDate: Date;
+  setCalendarDate: (d: Date) => void;
+  onUpdateStatus: (id: string, status: 'confirmed' | 'cancelled') => void;
+  mobile?: boolean;
+}) {
+  const year = calendarDate.getFullYear();
+  const month = calendarDate.getMonth();
+
+  const firstDay = new Date(year, month, 1).getDay(); // 0=日
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  // 該月的預約 map：date string → bookings[]
+  const bookingMap: Record<string, Booking[]> = {};
+  bookings.forEach(b => {
+    if (!bookingMap[b.date]) bookingMap[b.date] = [];
+    bookingMap[b.date].push(b);
+  });
+
+  const today = new Date().toISOString().split('T')[0];
+  const [selectedDate, setSelectedDate] = React.useState<string | null>(null);
+  const selectedBookings = selectedDate ? (bookingMap[selectedDate] || []) : [];
+
+  const statusColor = (s: string) =>
+    s === 'confirmed' ? 'bg-green-100 text-green-700' : s === 'cancelled' ? 'bg-gray-100 text-gray-400 line-through' : 'bg-orange-100 text-orange-700';
+
+  return (
+    <div className={cn('bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden', mobile && 'rounded-none border-0 shadow-none')}>
+      {/* 月份導覽 */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-50">
+        <button onClick={() => setCalendarDate(new Date(year, month - 1, 1))} className="p-2 hover:bg-gray-50 rounded-xl">
+          <ChevronLeft className="w-4 h-4 text-gray-500" />
+        </button>
+        <span className="font-bold text-gray-900">{year} 年 {month + 1} 月</span>
+        <button onClick={() => setCalendarDate(new Date(year, month + 1, 1))} className="p-2 hover:bg-gray-50 rounded-xl">
+          <ChevronRightIcon className="w-4 h-4 text-gray-500" />
+        </button>
+      </div>
+
+      {/* 星期標題 */}
+      <div className="grid grid-cols-7 text-center text-xs font-bold text-gray-400 px-2 pt-3 pb-1">
+        {['日','一','二','三','四','五','六'].map(d => <div key={d}>{d}</div>)}
+      </div>
+
+      {/* 日期格子 */}
+      <div className="grid grid-cols-7 gap-1 px-2 pb-3">
+        {Array.from({ length: firstDay }).map((_, i) => <div key={`empty-${i}`} />)}
+        {Array.from({ length: daysInMonth }).map((_, i) => {
+          const day = i + 1;
+          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const dayBookings = bookingMap[dateStr] || [];
+          const isToday = dateStr === today;
+          const isSelected = dateStr === selectedDate;
+          return (
+            <button key={day} onClick={() => setSelectedDate(isSelected ? null : dateStr)}
+              className={cn('relative flex flex-col items-center py-1.5 rounded-xl transition-colors text-sm',
+                isSelected ? 'bg-[#F5A623] text-[#3D2B1F]' : isToday ? 'bg-orange-50 text-orange-600 font-bold' : 'hover:bg-gray-50 text-gray-700'
+              )}>
+              {day}
+              {dayBookings.length > 0 && (
+                <span className={cn('w-1.5 h-1.5 rounded-full mt-0.5', isSelected ? 'bg-[#3D2B1F]' : 'bg-orange-400')} />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 選中日期的預約列表 */}
+      {selectedDate && (
+        <div className="border-t border-gray-50 px-4 py-4 space-y-3">
+          <p className="text-xs font-bold text-gray-400">{selectedDate} 的預約</p>
+          {selectedBookings.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-4">這天沒有預約</p>
+          ) : selectedBookings.map(b => (
+            <div key={b.id} className="bg-gray-50 rounded-2xl p-4">
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div>
+                  <span className="font-bold text-gray-900 text-sm">{b.user_name || '訪客'}</span>
+                  {b.user_phone && (
+                    <a href={`tel:${b.user_phone}`} className="flex items-center gap-1 text-xs text-orange-600 font-bold mt-0.5">
+                      <Phone className="w-3 h-3" />{b.user_phone}
+                    </a>
+                  )}
+                </div>
+                <span className={cn('text-xs px-2 py-1 rounded-full font-bold', statusColor(b.status))}>
+                  {b.status === 'confirmed' ? '已確認' : b.status === 'cancelled' ? '已取消' : '待確認'}
+                </span>
+              </div>
+              <p className="text-xs text-gray-400 mb-3">📍 {b.property_title} · ⏰ {b.time}</p>
+              {b.status === 'pending' && (
+                <div className="flex gap-2">
+                  <button onClick={() => onUpdateStatus(b.id, 'confirmed')}
+                    className="flex-1 py-2 rounded-xl bg-green-500 text-white text-xs font-bold hover:bg-green-600 transition-colors">
+                    確認
+                  </button>
+                  <button onClick={() => onUpdateStatus(b.id, 'cancelled')}
+                    className="flex-1 py-2 rounded-xl bg-gray-200 text-gray-600 text-xs font-bold hover:bg-gray-300 transition-colors">
+                    取消
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

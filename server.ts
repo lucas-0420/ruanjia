@@ -699,6 +699,64 @@ app.get('/api/users/:id', apiLimiter, async (req, res) => {
   res.json(data);
 });
 
+// 預約看房：支援登入用戶 & 訪客，送出後 LINE 通知仲介
+app.post('/api/bookings', writeLimiter, async (req: any, res: any) => {
+  const token = req.headers['authorization']?.replace('Bearer ', '');
+  const { receiver_id, property_id, property_title, date, time, guest_name, guest_phone } = req.body;
+
+  if (!property_id || !date || !time) {
+    return res.status(400).json({ error: '缺少必要欄位' });
+  }
+
+  let userId = 'guest';
+  let userName = guest_name?.trim().slice(0, 50) || '';
+  let userPhone = guest_phone?.trim().slice(0, 20) || '';
+
+  if (token) {
+    const authUser = await verifyToken(token);
+    if (!authUser) return res.status(401).json({ error: 'Token 無效' });
+    const { data: userRow } = await supabase.from('users').select('display_name').eq('id', authUser.id).single();
+    userId = authUser.id;
+    userName = userRow?.display_name || authUser.email?.split('@')[0] || '';
+  } else {
+    if (!guest_name?.trim() || !guest_phone?.trim()) {
+      return res.status(400).json({ error: '請填寫姓名與電話' });
+    }
+  }
+
+  const { error } = await supabase.from('bookings').insert({
+    property_id,
+    property_title: property_title || '',
+    user_id: userId,
+    user_name: userName,
+    user_phone: userPhone,
+    date,
+    time,
+    status: 'pending',
+    receiver_id: receiver_id || 'admin',
+  });
+
+  if (error) {
+    console.error('bookings insert error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+
+  // LINE 通知仲介
+  if (receiver_id && receiver_id !== 'guest' && receiver_id !== 'admin') {
+    const { data: ownerRow } = await supabase.from('users').select('line_user_id').eq('id', receiver_id).single();
+    if (ownerRow?.line_user_id) {
+      const lineMsg = `📅 新預約看房\n\n房源：${property_title || ''}\n預約者：${userName}${userPhone ? `（${userPhone}）` : ''}\n時間：${date} ${time}`;
+      try {
+        await lineClient.pushMessage({ to: ownerRow.line_user_id, messages: [{ type: 'text', text: lineMsg }] });
+      } catch (e) { console.error('LINE 通知失敗:', e); }
+    }
+  }
+
+  await notifyAdmin(`📅 新預約\n${property_title}\n${userName}${userPhone ? `（${userPhone}）` : ''}\n${date} ${time}`, `booking-${property_id}`);
+
+  res.json({ ok: true });
+});
+
 // 發送訊息：支援登入用戶 & 未登入訪客（需提供姓名+電話）
 app.post('/api/messages', writeLimiter, async (req: any, res: any) => {
   const token = req.headers['authorization']?.replace('Bearer ', '');

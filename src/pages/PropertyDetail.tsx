@@ -27,6 +27,8 @@ export default function PropertyDetail() {
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [bookingDate, setBookingDate] = useState('');
   const [bookingTime, setBookingTime] = useState('');
+  const [bookingName, setBookingName] = useState('');
+  const [bookingPhone, setBookingPhone] = useState('');
   const [isBooking, setIsBooking] = useState(false);
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [messageContent, setMessageContent] = useState('');
@@ -122,27 +124,38 @@ export default function PropertyDetail() {
 
   const handleBooking = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) {
-      toast('請先登入以預約看房', 'info');
+    if (!property) return;
+    if (!user && (!bookingName.trim() || !bookingPhone.trim())) {
+      toast('請填寫姓名與聯絡電話', 'info');
       return;
     }
-    if (!property) return;
 
     setIsBooking(true);
     try {
-      const { error } = await supabase.from('bookings').insert({
-        property_id: property.id,
-        property_title: property.title,
-        user_id: user.id,
-        user_name: user.user_metadata?.full_name || '',
-        user_phone: '',
-        date: bookingDate,
-        time: bookingTime,
-        status: 'pending',
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+
+      const res = await fetch(`${API_BASE}/api/bookings`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          receiver_id: property.owner.uid || 'admin',
+          property_id: property.id,
+          property_title: property.title,
+          date: bookingDate,
+          time: bookingTime,
+          guest_name: bookingName,
+          guest_phone: bookingPhone,
+        }),
       });
-      if (error) throw error;
-      toast('預約成功！管理員將會與您聯繫。', 'success');
+      if (!res.ok) throw new Error(await res.text());
+      toast('預約成功！仲介將盡快與您確認。', 'success');
       setShowBookingModal(false);
+      setBookingDate('');
+      setBookingTime('');
+      setBookingName('');
+      setBookingPhone('');
     } catch (error) {
       console.error('Booking error:', error);
       toast('預約失敗，請稍後再試。', 'error');
@@ -689,35 +702,43 @@ export default function PropertyDetail() {
             </button>
             
             <h3 className="text-2xl font-bold text-gray-900 mb-2">預約看房</h3>
-            <p className="text-gray-500 mb-8">請選擇您方便的時間，我們將盡快與您聯繫。</p>
+            <p className="text-gray-500 mb-6">選擇時間，仲介確認後會與您聯繫。</p>
 
-            <form onSubmit={handleBooking} className="space-y-6">
-              <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">預約日期</label>
-                <input 
-                  type="date" 
-                  required
-                  value={bookingDate}
-                  onChange={(e) => setBookingDate(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium"
-                />
+            <form onSubmit={handleBooking} className="space-y-4">
+              {!user && (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">姓名 *</label>
+                    <input type="text" required placeholder="您的姓名" value={bookingName}
+                      onChange={e => setBookingName(e.target.value)}
+                      className="w-full px-5 py-3 bg-gray-50 rounded-2xl outline-none focus:ring-2 focus:ring-orange-500 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">聯絡電話 *</label>
+                    <input type="tel" required placeholder="0912-345-678" value={bookingPhone}
+                      onChange={e => setBookingPhone(e.target.value)}
+                      className="w-full px-5 py-3 bg-gray-50 rounded-2xl outline-none focus:ring-2 focus:ring-orange-500 text-sm" />
+                  </div>
+                </>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">日期 *</label>
+                  <input type="date" required value={bookingDate}
+                    min={new Date().toISOString().split('T')[0]}
+                    onChange={e => setBookingDate(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-50 rounded-2xl outline-none focus:ring-2 focus:ring-orange-500 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">時間 *</label>
+                  <input type="time" required value={bookingTime}
+                    onChange={e => setBookingTime(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-50 rounded-2xl outline-none focus:ring-2 focus:ring-orange-500 text-sm" />
+                </div>
               </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">預約時間</label>
-                <input 
-                  type="time" 
-                  required
-                  value={bookingTime}
-                  onChange={(e) => setBookingTime(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-orange-600 font-medium"
-                />
-              </div>
-              <button 
-                type="submit"
-                disabled={isBooking}
-                className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold hover:bg-gray-800 transition-all disabled:opacity-50"
-              >
-                {isBooking ? '預約中...' : '確認預約'}
+              <button type="submit" disabled={isBooking}
+                className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold hover:bg-gray-800 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                {isBooking ? <><Loader2 className="w-5 h-5 animate-spin" />預約中...</> : '確認預約'}
               </button>
             </form>
           </div>
