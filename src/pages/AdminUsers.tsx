@@ -170,16 +170,18 @@ export default function AdminUsers() {
 
   // 角色徽章設定
   const roleConfig: Record<string, { label: string; color: string; Icon: React.ElementType }> = {
-    admin:  { label: '管理員', color: 'bg-gray-900 text-white',              Icon: Crown },
-    agent:  { label: '仲介',   color: 'bg-orange-100 text-orange-700',       Icon: Building2 },
-    user:   { label: '租客',   color: 'bg-blue-50 text-blue-600',            Icon: UserCheck },
+    admin:    { label: '管理員', color: 'bg-gray-900 text-white',              Icon: Crown },
+    agent:    { label: '仲介',   color: 'bg-orange-100 text-orange-700',       Icon: Building2 },
+    landlord: { label: '屋主',   color: 'bg-yellow-50 text-yellow-700',        Icon: Home },
+    user:     { label: '租客',   color: 'bg-blue-50 text-blue-600',            Icon: UserCheck },
   };
 
   // 各角色人數統計
   const roleCounts = {
-    admin: appUsers.filter(u => u.role === 'admin').length,
-    agent: appUsers.filter(u => u.role === 'agent').length,
-    user:  appUsers.filter(u => u.role === 'user').length,
+    admin:    appUsers.filter(u => u.role === 'admin').length,
+    agent:    appUsers.filter(u => u.role === 'agent').length,
+    landlord: appUsers.filter(u => u.role === 'landlord').length,
+    user:     appUsers.filter(u => u.role === 'user').length,
   };
 
   // 事件類型設定
@@ -307,9 +309,10 @@ export default function AdminUsers() {
                   <span className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{filteredUsers.length}</span>
                   {/* 角色人數統計徽章 */}
                   {([
-                    { role: 'admin', cfg: roleConfig.admin },
-                    { role: 'agent', cfg: roleConfig.agent },
-                    { role: 'user',  cfg: roleConfig.user  },
+                    { role: 'admin',    cfg: roleConfig.admin },
+                    { role: 'agent',    cfg: roleConfig.agent },
+                    { role: 'landlord', cfg: roleConfig.landlord },
+                    { role: 'user',     cfg: roleConfig.user  },
                   ] as { role: keyof typeof roleCounts; cfg: typeof roleConfig[string] }[]).map(({ role, cfg }) => (
                     <span key={role} className={cn('flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full', cfg.color)}>
                       <cfg.Icon className="w-3 h-3" />
@@ -359,12 +362,14 @@ export default function AdminUsers() {
                         onChange={e => handleRoleChange(u.id, e.target.value)}
                         className={cn(
                           'shrink-0 px-2 py-1.5 rounded-xl text-[11px] font-bold border cursor-pointer focus:outline-none',
-                          u.role === 'admin' ? 'bg-gray-900 text-white border-gray-900' :
-                          u.role === 'agent' ? 'bg-orange-50 text-orange-600 border-orange-200' :
+                          u.role === 'admin'    ? 'bg-gray-900 text-white border-gray-900' :
+                          u.role === 'agent'    ? 'bg-orange-50 text-orange-600 border-orange-200' :
+                          u.role === 'landlord' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
                           'bg-gray-50 text-gray-500 border-gray-200'
                         )}
                       >
                         <option value="user">租客</option>
+                        <option value="landlord">屋主</option>
                         <option value="agent">仲介</option>
                         <option value="admin">管理員</option>
                       </select>
