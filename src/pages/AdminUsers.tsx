@@ -42,6 +42,7 @@ export default function AdminUsers() {
   const [confirm, setConfirm] = useState<ConfirmModal | null>(null);
   const [propSearch, setPropSearch] = useState('');
   const [userSearch, setUserSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState<string | null>(null);
 
   const isAdmin = userRole === 'admin';
 
@@ -164,9 +165,10 @@ export default function AdminUsers() {
   const filteredProps = propSearch.trim()
     ? byPropFilter.filter(p => `${p.title} ${p.location.city}${p.location.district}`.toLowerCase().includes(propSearch.trim().toLowerCase()))
     : byPropFilter;
+  const byRoleFilter = roleFilter ? appUsers.filter(u => u.role === roleFilter) : appUsers;
   const filteredUsers = userSearch.trim()
-    ? appUsers.filter(u => `${u.displayName} ${u.email}`.toLowerCase().includes(userSearch.trim().toLowerCase()))
-    : appUsers;
+    ? byRoleFilter.filter(u => `${u.displayName} ${u.email}`.toLowerCase().includes(userSearch.trim().toLowerCase()))
+    : byRoleFilter;
 
   // 角色徽章設定
   const roleConfig: Record<string, { label: string; color: string; Icon: React.ElementType }> = {
@@ -304,20 +306,40 @@ export default function AdminUsers() {
             <>
               {/* 標題列 + 類別統計 + 搜尋 */}
               <div className="flex items-center justify-between flex-wrap gap-3">
-                <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-bold text-gray-900">用戶管理</span>
-                  <span className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{filteredUsers.length}</span>
-                  {/* 角色人數統計徽章 */}
+                  {/* 全部按鈕 */}
+                  <button
+                    onClick={() => setRoleFilter(null)}
+                    className={cn(
+                      'text-xs font-bold px-2.5 py-1 rounded-full transition-all',
+                      roleFilter === null
+                        ? 'bg-gray-900 text-white'
+                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    )}
+                  >
+                    全部 {appUsers.length}
+                  </button>
+                  {/* 角色人數統計徽章（可點擊篩選） */}
                   {([
                     { role: 'admin',    cfg: roleConfig.admin },
                     { role: 'agent',    cfg: roleConfig.agent },
                     { role: 'landlord', cfg: roleConfig.landlord },
                     { role: 'user',     cfg: roleConfig.user  },
                   ] as { role: keyof typeof roleCounts; cfg: typeof roleConfig[string] }[]).map(({ role, cfg }) => (
-                    <span key={role} className={cn('flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full', cfg.color)}>
+                    <button
+                      key={role}
+                      onClick={() => setRoleFilter(f => f === role ? null : role)}
+                      className={cn(
+                        'flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full transition-all',
+                        roleFilter === role
+                          ? cfg.color + ' ring-2 ring-offset-1 ring-current'
+                          : cfg.color + ' opacity-60 hover:opacity-100'
+                      )}
+                    >
                       <cfg.Icon className="w-3 h-3" />
                       {cfg.label} {roleCounts[role]}
-                    </span>
+                    </button>
                   ))}
                 </div>
                 <div className="relative">
