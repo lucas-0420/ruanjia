@@ -41,21 +41,15 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
 
       if (authUser) {
-        // Upsert user profile
+        // Upsert user profile，並在同一次呼叫拿回 role + favorites（省一次 round-trip）
         const displayName = authUser.user_metadata?.full_name || authUser.user_metadata?.name || authUser.email?.split('@')[0] || '';
-        await supabase.from('users').upsert({
+        const { data } = await supabase.from('users').upsert({
           id: authUser.id,
           email: authUser.email,
           display_name: displayName,
           photo_url: authUser.user_metadata?.avatar_url || '',
-        }, { onConflict: 'id', ignoreDuplicates: false });
+        }, { onConflict: 'id', ignoreDuplicates: false }).select('favorites, role').single();
 
-        // Fetch role + favorites
-        const { data } = await supabase
-          .from('users')
-          .select('favorites, role')
-          .eq('id', authUser.id)
-          .single();
         setFavorites(data?.favorites || []);
         setUserRole(data?.role || 'user');
       } else {
@@ -69,9 +63,10 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
   // ── Properties (Realtime) ─────────────────────────
   useEffect(() => {
     const fetchProperties = async () => {
+      // 列表頁不需要 description（可能很長），PropertyDetail 自行 fetch 完整資料
       const { data, error } = await supabase
         .from('properties')
-        .select('*')
+        .select('id,title,price,type,city,district,address,lat,lng,bedrooms,bathrooms,area,floor,total_floors,management_fee,deposit,amenities,images,owner_id,owner_name,owner_phone,owner_avatar,owner_role,owner_line_id,is_zero_fee,tags,status,created_at')
         .neq('status', 'archived')
         .order('created_at', { ascending: false });
 

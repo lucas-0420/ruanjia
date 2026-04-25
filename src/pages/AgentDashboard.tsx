@@ -91,7 +91,7 @@ export default function AgentDashboard() {
         }
         setInquiryLoading(false);
       });
-  }, [user, canAccess, activeTab]);
+  }, [user, canAccess]); // 不依賴 activeTab，避免每次切 Tab 重複 fetch
 
   // ── 標記已讀 ──
   const markRead = async (id: string) => {
@@ -113,7 +113,7 @@ export default function AgentDashboard() {
         if (!error && data) setBookings(data as Booking[]);
         setBookingLoading(false);
       });
-  }, [user, canAccess, activeTab]);
+  }, [user, canAccess]); // 不依賴 activeTab，避免每次切 Tab 重複 fetch
 
   // ── 更新預約狀態 ──
   const updateBookingStatus = async (id: string, status: 'confirmed' | 'cancelled') => {
