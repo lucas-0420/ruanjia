@@ -18,9 +18,12 @@ import { useFirebase } from '../context/SupabaseContext';
 
 export default function PropertyDetail() {
   const { id } = useParams();
-  const { user, favorites, toggleFavorite } = useFirebase();
-  const [property, setProperty] = useState<Property | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { user, favorites, toggleFavorite, properties: allProperties } = useFirebase();
+
+  // 先從 Context 快取取得，立即顯示不等 DB
+  const cached = allProperties.find(p => p.id === id) ?? null;
+  const [property, setProperty] = useState<Property | null>(cached);
+  const [loading, setLoading] = useState(!cached);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [bookingDate, setBookingDate] = useState('');
   const [bookingTime, setBookingTime] = useState('');
