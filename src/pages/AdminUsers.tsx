@@ -46,18 +46,30 @@ export default function AdminUsers() {
 
   const isAdmin = userRole === 'admin';
 
+  // 快取標記：已 fetch 過就不重複打 API
+  const [usersFetched, setUsersFetched] = useState(false);
+  const [propsFetched, setPropsFetched] = useState(false);
+
+  // 一次取得 session，供多個 fetch 共用
+  const getSession = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session;
+  };
+
+  // 用戶管理：進頁面就立刻 fetch（不等切 Tab）
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!isAdmin || usersFetched) return;
     const fetchUsers = async () => {
       setUsersLoading(true);
       setUsersError(null);
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const session = await getSession();
         if (!session) { setUsersError('未登入'); setUsersLoading(false); return; }
         const res = await fetch(API_BASE + '/api/admin/users', { headers: { Authorization: `Bearer ${session.access_token}` } });
         if (res.ok) {
           const { users } = await res.json();
           setAppUsers((users || []).map((r: any) => ({ id: r.id, email: r.email, displayName: r.display_name, photoUrl: r.photo_url, role: r.role || 'user', createdAt: r.created_at })));
+          setUsersFetched(true);
         } else {
           const txt = await res.text();
           setUsersError(`API 錯誤 ${res.status}: ${txt.slice(0, 100)}`);
@@ -68,12 +80,36 @@ export default function AdminUsers() {
       setUsersLoading(false);
     };
     fetchUsers();
-  }, [isAdmin]);
+  }, [isAdmin, usersFetched]);
+
+  // 房源管理：進頁面就立刻 fetch（不等切 Tab），與用戶管理平行進行
+  useEffect(() => {
+    if (!isAdmin || propsFetched) return;
+    const fetchAllProperties = async () => {
+      setPropLoading(true);
+      try {
+        const session = await getSession();
+        if (!session) { setPropLoading(false); return; }
+        const res = await fetch(API_BASE + '/api/admin/properties', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (res.ok) {
+          const { properties } = await res.json();
+          setAllProperties((properties || []).map(mapPropertyFromDB));
+          setPropsFetched(true);
+        }
+      } catch (e: any) {
+        console.error('properties fetch error:', e);
+      }
+      setPropLoading(false);
+    };
+    fetchAllProperties();
+  }, [isAdmin, propsFetched]);
 
   // 事件紀錄 fetch（切換到 events tab 或手動刷新時觸發）
   const fetchEvents = async () => {
     setEventsLoading(true);
-    const { data: { session } } = await supabase.auth.getSession();
+    const session = await getSession();
     if (!session) { setEventsLoading(false); return; }
     const res = await fetch(API_BASE + '/api/admin/events', { headers: { Authorization: `Bearer ${session.access_token}` } });
     if (res.ok) {
@@ -89,25 +125,6 @@ export default function AdminUsers() {
     // 每 30 秒自動更新
     const interval = setInterval(fetchEvents, 30_000);
     return () => clearInterval(interval);
-  }, [activeTab, isAdmin]);
-
-  // 切換到房源Tab時抓全部房源（走後端 API，service role 可看到下架與 LINE 上架的房源）
-  useEffect(() => {
-    if (activeTab !== 'properties' || !isAdmin) return;
-    const fetchAllProperties = async () => {
-      setPropLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { setPropLoading(false); return; }
-      const res = await fetch(API_BASE + '/api/admin/properties', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      if (res.ok) {
-        const { properties } = await res.json();
-        setAllProperties((properties || []).map(mapPropertyFromDB));
-      }
-      setPropLoading(false);
-    };
-    fetchAllProperties();
   }, [activeTab, isAdmin]);
 
   if (isAuthReady && !isAdmin) return <Navigate to="/" />;
